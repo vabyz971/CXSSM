@@ -3,10 +3,12 @@
 // Windows : application graphique, sans fenêtre de console.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod assets;
 mod i18n;
 mod player;
+mod state;
 mod theme;
-mod view;
+mod ui;
 mod widgets;
 
 use gpui::{px, size, App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
@@ -18,8 +20,9 @@ fn main() {
     // `cxssm-app [chemin/vers/fmod_assets_all.bundle]` : ouvre directement le bundle.
     let initial = std::env::args_os().nth(1).map(std::path::PathBuf::from);
 
-    Application::new().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1360.), px(820.)), cx);
+    Application::new().with_assets(assets::Assets).run(move |cx: &mut App| {
+        assets::load_fonts(cx);
+        let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -30,7 +33,11 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |_, cx| cx.new(|cx| view::MainView::new(cx, initial)),
+            |_, cx| {
+                // État partagé, puis la vue racine qui assemble les composants.
+                let state = cx.new(|cx| state::AppState::new(cx, initial));
+                cx.new(|cx| ui::Workspace::new(state, cx))
+            },
         )
         .expect("ouverture de la fenêtre");
         cx.activate(true);

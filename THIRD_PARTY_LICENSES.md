@@ -26,3 +26,11 @@ The file `crates/cxssm-fmod/src/vorbis/lookup.rs` is copied unmodified from
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
+
+## Inter and JetBrains Mono fonts
+
+`crates/cxssm-app/assets/fonts/` contains Latin subsets of **Inter 4.1**
+(Copyright 2016 The Inter Project Authors) and **JetBrains Mono NL 2.304**
+(Copyright 2020 The JetBrains Mono Project Authors), embedded in the application and
+distributed under the **SIL Open Font License 1.1**. The full license text is in
+`crates/cxssm-app/assets/fonts/OFL.txt`.

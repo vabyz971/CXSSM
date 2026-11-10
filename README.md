@@ -228,10 +228,28 @@ CXSSM/
 │   ├── cxssm-fmod-studio/  runtime-loaded binding to the FMOD Studio API (the only `unsafe` crate)
 │   ├── cxssm-core/         domain logic: ModProject, categories, audio checks, encoder, export, engine simulator
 │   ├── cxssm-cli/          `cxssm` binary (scripts, tests on the real file)
-│   └── cxssm-app/          GPUI binary: theme.rs, widgets.rs, view.rs, view/engine_panel.rs
+│   └── cxssm-app/          GPUI binary (see below)
 └── docs/
     ├── RECHERCHE_FMOD.md   formats, constraints, risks, validation plan (French)
-    └── mockup/index.html   UI mockup (open in a browser)
+    ├── design/             reference UI design: Main.dc.html, Preferences.dc.html
+    └── mockup/index.html   first UI mockup (open in a browser)
+```
+
+The GPUI app (`crates/cxssm-app/src`) follows the design in `docs/design/`:
+
+```text
+main.rs            window, embedded fonts and icons
+theme.rs           colours, fonts, sizes and spacing (constants)
+assets.rs          SVG icons + Inter / JetBrains Mono (OFL, assets/fonts)
+widgets.rs         buttons, switch, segmented control, scrollbar, spectrum strip
+state/             shared GPUI model `AppState`: bundle, selection (car, sound),
+                   simulator (RPM, load, limiter), playback, preferences, updates
+ui/mod.rs          root view: lays out the components below
+ui/tree.rs         category tree (Engine ▸ V8/V6… ▸ cars) with search
+ui/rpm_simulator.rs  RPM readout, tach, load, limiter, throttle and sweep
+ui/sound_list.rs   sounds of the selection: spectrum + RPM range, live volume/pitch
+ui/side_panel.rs   collapsible panel: Info / Edit / Import-Export tabs
+ui/preferences.rs  modal dialog with section navigation
 ```
 
 Principles:
@@ -254,10 +272,11 @@ every text is written in both languages where it is used, e.g. `self.t("Ouvrir",
 - [x] Read/rewrite validated on the real `fmod_assets_all.bundle`
 - [x] Preview of the original sounds and WAV export (native FMOD Vorbis decoder)
 - [x] Engine simulator (FMOD Studio API): live RPM/load, active layers, sound map, rev limiter
-- [ ] **In-game test of a replaced sound**
+- [x] In-game test of a replaced sound: the replaced sounds play correctly in CarX Street
 - [ ] Native FMOD Vorbis encoder (would remove the `fsbank` dependency)
 - [x] Preferences: language (FR/EN), rev limiter on/off, visible categories, game auto-detection
-- [ ] Search, drag & drop, bank list in the sidebar
+- [x] Category tree with car search, collapsible details panel (design in `docs/design/`)
+- [ ] Drag & drop of replacement files
 - [ ] Automatic resampling and mono/stereo conversion
 - [x] FMOD Engine auto-detection and folder setting in the UI
 - [x] Update check and install from GitHub Releases

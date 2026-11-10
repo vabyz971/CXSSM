@@ -64,6 +64,38 @@ pub struct MapEntry {
     /// Régime où le son est le plus fort.
     pub rpm_peak: f32,
     pub peak_volume: f32,
+    /// Volume mesuré à chaque pas du balayage où le son est audible : `(régime, volume)`.
+    pub curve: Vec<(f32, f32)>,
+}
+
+impl MapEntry {
+    /// Volume (interpolé) à un régime donné, d'après la courbe du balayage.
+    pub fn volume_at(&self, rpm: f32) -> f32 {
+        let c = &self.curve;
+        // Pas du balayage : écart minimal entre deux mesures.
+        let step = c.windows(2).map(|w| w[1].0 - w[0].0).fold(f32::MAX, f32::min);
+        match c.iter().position(|&(r, _)| r >= rpm) {
+            None => 0.,
+            Some(0) => if c[0].0 - rpm < 1. { c[0].1 } else { 0. },
+            Some(i) => {
+                let ((r0, v0), (r1, v1)) = (c[i - 1], c[i]);
+                // Trou dans la courbe : le son est inaudible entre ces deux mesures.
+                if r1 - r0 > 1.5 * step {
+                    return 0.;
+                }
+                v0 + (v1 - v0) * ((rpm - r0) / (r1 - r0)).clamp(0., 1.)
+            }
+        }
+    }
+
+    /// Plages de fondu (entrée, sortie) en tr/min : régime parcouru entre l'apparition
+    /// du son et 90 % de son volume maximal, puis entre ce plateau et sa disparition.
+    pub fn fades(&self) -> (f32, f32) {
+        let top = 0.9 * self.peak_volume;
+        let first = self.curve.iter().find(|&&(_, v)| v >= top).map_or(self.rpm_peak, |&(r, _)| r);
+        let last = self.curve.iter().rev().find(|&&(_, v)| v >= top).map_or(self.rpm_peak, |&(r, _)| r);
+        (first - self.rpm_min, self.rpm_max - last)
+    }
 }
 
 /// Banque moteur copiée hors du projet (pour travailler en arrière-plan).
@@ -260,7 +292,9 @@ pub fn sweep(lib: &Arc<FmodLib>, data: &EngineData, event: &EngineEvent, step: f
                     rpm_max: rpm,
                     rpm_peak: rpm,
                     peak_volume: 0.,
+                    curve: Vec::new(),
                 });
+                e.curve.push((rpm, l.volume));
                 e.rpm_min = e.rpm_min.min(rpm);
                 e.rpm_max = e.rpm_max.max(rpm);
                 if l.volume > e.peak_volume {
@@ -278,4 +312,24 @@ pub fn sweep(lib: &Arc<FmodLib>, data: &EngineData, event: &EngineEvent, step: f
     let mut v: Vec<MapEntry> = acc.into_values().collect();
     v.sort_by(|a, b| (!a.on_load, a.rpm_peak).partial_cmp(&(!b.on_load, b.rpm_peak)).unwrap_or(std::cmp::Ordering::Equal));
     Ok(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(curve: Vec<(f32, f32)>) -> MapEntry {
+        MapEntry { sound: SoundRef { bank: 0, sample: 0 }, on_load: true, rpm_min: curve[0].0, rpm_max: curve.last().unwrap().0, rpm_peak: 2000., peak_volume: 1., curve }
+    }
+
+    #[test]
+    fn volume_curve_interpolates_and_respects_gaps() {
+        let e = entry(vec![(1000., 0.2), (1500., 0.6), (2000., 1.0), (2500., 0.6), (4000., 0.5)]);
+        assert_eq!(e.volume_at(500.), 0.);
+        assert_eq!(e.volume_at(1000.), 0.2);
+        assert!((e.volume_at(1250.) - 0.4).abs() < 1e-6);
+        assert_eq!(e.volume_at(3000.), 0., "trou entre 2500 et 4000");
+        assert_eq!(e.volume_at(4500.), 0.);
+        assert_eq!(e.fades(), (1000., 2000.));
+    }
 }

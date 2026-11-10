@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>CXSSM Préférences</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0c0e}
+*{scrollbar-width:thin;scrollbar-color:#2c3037 transparent}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left}
+a{color:inherit;text-decoration:none}
+button:focus-visible,a:focus-visible{outline:2px solid #F5B800;outline-offset:2px}
+.hv:hover{background:#1b1e23}
+.btn2{background:#181a1e;border:1px solid #2a2e35;border-radius:8px}
+.btn2:hover{background:#21242a;border-color:#3a3f48}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+@media (max-width: 760px){
+  .dlgbody{flex-direction:column !important}
+  .nav{width:auto !important;flex-direction:row !important;overflow:auto;border-right:0 !important;border-bottom:1px solid #23262c}
+}
+</style>
+</helmet>
+
+<div style="min-height:100vh;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:32px 16px;background:radial-gradient(ellipse at 50% 30%,#14161a 0%,#0b0c0e 70%);color:#eceef1;font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.45">
+
+  <div role="dialog" aria-labelledby="ttl" style="width:100%;max-width:900px;display:flex;flex-direction:column;border-radius:14px;background:#121316;border:1px solid #2a2e35;box-shadow:0 24px 80px rgba(0,0,0,.6);overflow:hidden">
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid #23262c">
+      <h1 id="ttl" style="margin:0;font-size:18px;font-weight:600">Préférences</h1>
+      <a class="btn2" href="Main.dc.html" style="height:34px;padding:0 16px;display:flex;align-items:center;gap:8px;font-weight:500">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        Fermer
+      </a>
+    </div>
+
+    <div class="dlgbody" style="display:flex;min-height:520px">
+
+      <nav class="nav" aria-label="Sections" style="width:210px;flex:none;display:flex;flex-direction:column;gap:2px;padding:12px;border-right:1px solid #23262c;background:#101114">
+        <sc-for list="{{sections}}" as="n" hint-placeholder-count="4">
+          <button class="hv" aria-current="{{n.current}}" onClick="{{n.go}}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;height:38px;padding:0 12px;border-radius:7px;font-weight:500;white-space:nowrap;background:{{n.bg}};color:{{n.color}}">
+            {{n.label}}
+            <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><span style="width:8px;height:8px;border-radius:4px;background:{{accent}}"></span></sc-if>
+          </button>
+        </sc-for>
+      </nav>
+
+      <div style="flex:1;min-width:0;padding:22px 24px;display:flex;flex-direction:column;gap:26px;overflow:auto;max-height:70vh">
+
+        <!-- Général -->
+        <sc-if value="{{ secGeneral }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:26px">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <span style="font-weight:600">Langue</span>
+              <div role="group" aria-label="Langue" style="display:flex;gap:3px;padding:3px;width:fit-content;border-radius:9px;background:#15171b;border:1px solid #2a2e35">
+                <button aria-pressed="{{langFr}}" onClick="{{setFr}}" style="height:30px;padding:0 16px;border-radius:6px;font-weight:500;background:{{frBg}};color:{{frColor}}">Français</button>
+                <button aria-pressed="{{langEn}}" onClick="{{setEn}}" style="height:30px;padding:0 16px;border-radius:6px;font-weight:500;background:{{enBg}};color:{{enColor}}">English</button>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <span style="font-weight:600">Limiteur de régime</span>
+                <span style="color:#9aa0aa">Le régime rebondit sur le limiteur dans le simulateur (réglable depuis le simulateur).</span>
+              </div>
+              <button role="switch" aria-label="Limiteur de régime" aria-checked="{{rev.on}}" onClick="{{rev.toggle}}" style="position:relative;flex:none;width:42px;height:24px;border-radius:12px;background:{{rev.bg}}"><span style="position:absolute;top:3px;width:18px;height:18px;border-radius:9px;background:{{rev.knobBg}};left:{{rev.knob}}px;transition:left .15s"></span></button>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <span style="font-weight:600">Catégories visibles</span>
+                <span style="color:#9aa0aa">Seules les catégories cochées apparaissent dans l’arborescence.</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <sc-for list="{{cats}}" as="c" hint-placeholder-count="7">
+                  <button aria-pressed="{{c.on}}" onClick="{{c.toggle}}" style="height:34px;padding:0 14px;border-radius:8px;display:flex;align-items:center;gap:7px;font-weight:500;background:{{c.bg}};color:{{c.color}};border:1px solid {{c.bd}}">
+                    <sc-if value="{{ c.on }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></sc-if>
+                    {{c.label}}
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- Jeu -->
+        <sc-if value="{{ secGame }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:26px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <span style="font-weight:600">Ouvrir le bundle au démarrage</span>
+                <span style="color:#9aa0aa">Charge automatiquement le fichier choisi à l’ouverture de CXSSM.</span>
+              </div>
+              <button role="switch" aria-label="Ouvrir le bundle au démarrage" aria-checked="{{auto.on}}" onClick="{{auto.toggle}}" style="position:relative;flex:none;width:42px;height:24px;border-radius:12px;background:{{auto.bg}}"><span style="position:absolute;top:3px;width:18px;height:18px;border-radius:9px;background:{{auto.knobBg}};left:{{auto.knob}}px;transition:left .15s"></span></button>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <span style="font-weight:600">Installation détectée <span style="color:#9aa0aa;font-weight:400">(bibliothèques Steam)</span></span>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="mono" style="flex:1;min-width:0;height:38px;display:flex;align-items:center;padding:0 12px;border-radius:8px;background:#0b0c0e;border:1px solid #2a2e35;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">/home/vabyz971/.local/share/Steam/steamapps/common/CarX Street/CarX Street_Data</div>
+                <button class="btn2" style="height:38px;padding:0 16px;font-weight:500">Ouvrir</button>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <span style="font-weight:600">Fichier choisi</span>
+              <div style="display:flex;align-items:center;gap:10px;padding:12px;border-radius:8px;background:#15171b;border:1px solid #2a2e35">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M5 12l5 5 9-10"></path></svg>
+                <span class="mono" style="font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0">/run/media/vabyz971/VolumeD/Applications/CXSSM Pack/fmod_assets_all.bundle</span>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn2" style="height:36px;padding:0 16px;font-weight:500">Chercher à nouveau</button>
+                <button class="btn2" style="height:36px;padding:0 16px;font-weight:500">Choisir un fichier…</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- FMOD -->
+        <sc-if value="{{ secFmod }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <span style="font-weight:600">Moteur FMOD</span>
+            <span style="color:#9aa0aa">Dossier de l’API FMOD Studio, utilisé pour encoder les sons remplacés.</span>
+            <div class="mono" style="min-height:38px;display:flex;align-items:center;padding:0 12px;border-radius:8px;background:#0b0c0e;border:1px solid #2a2e35;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">/home/vabyz971/Downloads/fmodstudioapi20400linux</div>
+            <div style="display:flex;align-items:center;gap:8px;color:#d7dbe1">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+              Encodeur (fsbank) et simulateur disponibles
+            </div>
+            <div><button class="btn2" style="height:36px;padding:0 16px;font-weight:500">Choisir un dossier…</button></div>
+          </div>
+        </sc-if>
+
+        <!-- Mises à jour -->
+        <sc-if value="{{ secUpdate }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:26px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <span style="font-weight:600">Vérifier les mises à jour au démarrage</span>
+                <span style="color:#9aa0aa">Interroge GitHub à chaque lancement.</span>
+              </div>
+              <button role="switch" aria-label="Vérifier les mises à jour au démarrage" aria-checked="{{upd.on}}" onClick="{{upd.toggle}}" style="position:relative;flex:none;width:42px;height:24px;border-radius:12px;background:{{upd.bg}}"><span style="position:absolute;top:3px;width:18px;height:18px;border-radius:9px;background:{{upd.knobBg}};left:{{upd.knob}}px;transition:left .15s"></span></button>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;justify-content:space-between;gap:16px"><span style="color:#9aa0aa">Version installée</span><span class="mono">0.1.0</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:10px;background:{{accentTint}};border:1px solid {{accent}}">
+                <span style="font-weight:600">Nouvelle version disponible : v0.1.1</span>
+                <a class="mono" href="https://github.com/vabyz971/CXSSM/releases/tag/v0.1.1" style="font-size:12px;color:{{accent}};text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">github.com/vabyz971/CXSSM/releases/tag/v0.1.1</a>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn2" style="height:36px;padding:0 16px;font-weight:500">Vérifier</button>
+                <button style="height:36px;padding:0 18px;border-radius:8px;background:{{accent}};color:#111;font-weight:600">Installer</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#F5B800","options":["#F5B800","#FF8A3D","#4FC3F7","#B8E04A"]}}'>
+class Component extends DCLogic {
+  defaults() {
+    return { sec: 'general', lang: 'fr', rev: true, auto: true, upd: true,
+      cats: { Moteur: true, Turbo: true, Échappement: true, Voix: true, Musique: false, Interface: false, Autres: false } };
+  }
+  S() { return Object.assign(this.defaults(), this.state || {}); }
+  tint(h) { return /^#[0-9a-f]{6}$/i.test(h || '') ? h : '#F5B800'; }
+
+  renderVals() {
+    const s = this.S();
+    const accent = this.tint(this.props.accent);
+    const sw = (key) => {
+      const on = s[key];
+      return { on: on, bg: on ? accent : '#3a3f48', knobBg: on ? '#111' : '#eceef1', knob: on ? 21 : 3, toggle: () => this.setState({ [key]: !s[key] }) };
+    };
+    const segs = (on) => ({ bg: on ? accent : 'transparent', color: on ? '#111' : '#d7dbe1' });
+    const fr = segs(s.lang === 'fr'), en = segs(s.lang === 'en');
+    const items = [['general', 'Général'], ['game', 'Jeu'], ['fmod', 'FMOD'], ['update', 'Mises à jour']];
+    const sections = items.map(i => ({
+      label: i[1], current: s.sec === i[0] ? 'page' : undefined, bg: s.sec === i[0] ? accent + '24' : 'transparent',
+      color: s.sec === i[0] ? '#fff' : '#b6bbc4', badge: i[0] === 'update',
+      go: () => this.setState({ sec: i[0] })
+    }));
+    const cats = Object.keys(s.cats).map(k => {
+      const on = s.cats[k];
+      return { label: k, on: on, bg: on ? accent + '1f' : '#15171b', color: on ? accent : '#d7dbe1', bd: on ? accent : '#2a2e35',
+        toggle: () => this.setState({ cats: Object.assign({}, s.cats, { [k]: !on }) }) };
+    });
+    return {
+      accent: accent, accentTint: accent + '1f', sections: sections, cats: cats,
+      secGeneral: s.sec === 'general', secGame: s.sec === 'game', secFmod: s.sec === 'fmod', secUpdate: s.sec === 'update',
+      langFr: s.lang === 'fr', langEn: s.lang === 'en', setFr: () => this.setState({ lang: 'fr' }), setEn: () => this.setState({ lang: 'en' }),
+      frBg: fr.bg, frColor: fr.color, enBg: en.bg, enColor: en.color,
+      rev: sw('rev'), auto: sw('auto'), upd: sw('upd')
+    };
+  }
+}
+</script>
+</body>
+</html>

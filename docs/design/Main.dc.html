@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>CXSSM Éditeur de sons</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0c0e}
+*{scrollbar-width:thin;scrollbar-color:#2c3037 transparent}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left}
+button:disabled{cursor:default}
+button:focus-visible,input:focus-visible{outline:2px solid #F5B800;outline-offset:2px}
+.hv:hover:not(:disabled){background:#1b1e23}
+.btn2{background:#181a1e;border:1px solid #2a2e35;border-radius:8px}
+.btn2:hover:not(:disabled){background:#21242a;border-color:#3a3f48}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:#F5B800}
+@media (max-width: 980px){
+  .shell{height:auto !important}
+  .body{flex-direction:column !important}
+  .tree,.side{width:auto !important;max-height:360px}
+  .rail{display:none !important}
+  .listbox{min-height:420px}
+}
+</style>
+</helmet>
+
+<div class="shell" style="display:flex;flex-direction:column;height:100vh;min-height:640px;background:#0b0c0e;color:#eceef1;font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.4">
+
+  <!-- Barre d'application -->
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:10px 20px;background:#0f1013;border-bottom:1px solid #23262c">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:28px;height:28px;border-radius:7px;background:{{accent}};display:flex;align-items:center;justify-content:center;color:#111">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 12v0M8 8v8M12 4v16M16 9v6M20 11v2"></path></svg>
+      </div>
+      <span style="font-weight:600;font-size:16px;letter-spacing:.04em">CXSSM</span>
+      
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <a class="btn2" href="Preferences.dc.html" style="height:34px;padding:0 14px;display:flex;align-items:center;gap:8px;box-sizing:border-box;color:inherit;text-decoration:none">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+        Préférences
+      </a>
+      <button class="btn2" style="height:34px;padding:0 14px;display:flex;align-items:center;gap:8px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+        Ouvrir un bundle
+      </button>
+      <button style="height:34px;padding:0 16px;border-radius:8px;background:{{accent}};color:#111;font-weight:600;display:flex;align-items:center;gap:8px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path></svg>
+        Exporter le mod
+        <span class="mono" style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111;color:{{accent}};font-size:11px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box">{{replacedCount}}</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="body" style="display:flex;flex:1;min-height:0">
+
+    <!-- Arborescence -->
+    <aside class="tree" style="width:272px;flex:none;display:flex;flex-direction:column;background:#101114;border-right:1px solid #23262c;min-height:0">
+      <div style="padding:14px 14px 10px;display:flex;flex-direction:column;gap:8px">
+        <div style="position:relative">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9aa0aa" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position:absolute;left:11px;top:11px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+          <input type="text" aria-label="Rechercher une voiture" placeholder="Rechercher une voiture" value="{{query}}" onInput="{{onQuery}}" style="box-sizing:border-box;width:100%;height:36px;padding:0 34px 0 34px;border-radius:8px;border:1px solid #2a2e35;background:#0b0c0e;color:#eceef1;font:inherit">
+          <sc-if value="{{ hasQuery }}" hint-placeholder-val="{{ false }}">
+            <button aria-label="Effacer la recherche" onClick="{{clearQuery}}" style="position:absolute;right:4px;top:4px;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#b6bbc4">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            </button>
+          </sc-if>
+        </div>
+        <div style="color:#9aa0aa;font-size:12px">{{treeSummary}}</div>
+      </div>
+      <nav aria-label="Catégories de sons" style="flex:1;overflow:auto;padding:0 8px 12px;display:flex;flex-direction:column;gap:1px">
+        <sc-for list="{{treeRows}}" as="r" hint-placeholder-count="8">
+          <sc-if value="{{ r.isNote }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:6px 12px 8px 40px;color:#8b919b;font-size:12px">{{r.label}}</div>
+          </sc-if>
+          <sc-if value="{{ r.isRow }}" hint-placeholder-val="{{ true }}">
+            <button class="hv" onClick="{{r.act}}" disabled="{{r.disabled}}" aria-expanded="{{r.expanded}}" style="display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;height:32px;padding:0 12px 0 {{r.pad}}px;border-radius:6px;background:{{r.bg}};color:{{r.color}};font-weight:{{r.weight}}">
+              <sc-if value="{{ r.hasChev }}" hint-placeholder-val="{{ true }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;transform:rotate({{r.rot}}deg);transition:transform .15s"><path d="M9 6l6 6-6 6"></path></svg>
+              </sc-if>
+              <sc-if value="{{ r.noChev }}" hint-placeholder-val="{{ false }}">
+                <span style="width:14px;flex:none"></span>
+              </sc-if>
+              <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.label}}</span>
+              <span class="mono" style="font-size:11px;color:#8b919b">{{r.count}}</span>
+            </button>
+          </sc-if>
+        </sc-for>
+      </nav>
+    </aside>
+
+    <!-- Zone principale -->
+    <main style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px;padding:18px 20px;min-height:0">
+
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="color:#9aa0aa;font-size:12px">{{breadcrumb}}</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <h1 style="margin:0;font-size:22px;font-weight:600">{{carName}}</h1>
+            
+          </div>
+        </div>
+        <div role="group" aria-label="Sons à écouter" style="display:flex;padding:3px;gap:3px;border-radius:9px;background:#15171b;border:1px solid #2a2e35">
+          <button aria-pressed="{{isOriginal}}" onClick="{{setOriginal}}" style="height:30px;padding:0 14px;border-radius:6px;font-weight:500;background:{{origBg}};color:{{origColor}}">Sons originaux</button>
+          <button aria-pressed="{{isModified}}" onClick="{{setModified}}" style="height:30px;padding:0 14px;border-radius:6px;font-weight:500;background:{{modBg}};color:{{modColor}}">Sons remplacés</button>
+        </div>
+      </div>
+
+      <!-- Simulateur RPM -->
+      <section aria-label="Simulateur de régime moteur" style="display:flex;flex-wrap:wrap;gap:20px 28px;align-items:stretch;padding:16px 20px;border-radius:12px;background:#121316;border:1px solid #23262c">
+        <div style="display:flex;flex-direction:column;justify-content:center;min-width:150px">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span class="mono" style="font-size:52px;font-weight:600;line-height:1;letter-spacing:-.02em">{{rpmText}}</span>
+            <span style="color:#9aa0aa;font-size:13px">tr/min</span>
+          </div>
+          <div style="margin-top:8px;color:#9aa0aa;font-size:12px">Charge <span class="mono" style="color:#eceef1">{{loadText}} %</span></div>
+        </div>
+
+        <div style="flex:1 1 320px;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:8px">
+          <div style="position:relative;height:14px;border-radius:7px;background:#1d2025;overflow:hidden">
+            <div style="position:absolute;left:0;top:0;bottom:0;border-radius:7px;background:{{accent}};width:{{rpmPct}}%"></div>
+          </div>
+          <div style="position:relative;height:16px;margin:0 6px">
+            <sc-for list="{{tachTicks}}" as="t" hint-placeholder-count="6">
+              <span class="mono" style="position:absolute;top:0;transform:translateX(-50%);font-size:11px;color:#8b919b;left:{{t.left}}%">{{t.label}}</span>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;color:#9aa0aa;font-size:12px">
+            <span style="width:56px">Charge</span>
+            <div style="flex:1;height:6px;border-radius:3px;background:#1d2025"><div style="height:100%;border-radius:3px;background:#eceef1;width:{{loadText}}%"></div></div>
+            <span style="margin-left:8px">Limiteur <span class="mono" style="color:#eceef1">{{limiterText}}</span></span>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;flex:0 1 300px;min-width:240px">
+          <button onMouseDown="{{holdStart}}" onMouseUp="{{holdEnd}}" onMouseLeave="{{holdEnd}}" onTouchStart="{{holdStart}}" onTouchEnd="{{holdEnd}}" onKeyDown="{{keyDown}}" onKeyUp="{{keyUp}}" style="height:52px;border-radius:10px;font-weight:600;font-size:14px;text-align:center;display:flex;align-items:center;justify-content:center;gap:10px;background:{{holdBg}};color:{{holdColor}};border:1px solid {{accent}};user-select:none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>
+            Maintenir pour accélérer
+          </button>
+          <div style="display:flex;gap:8px">
+            <button class="btn2" onClick="{{toggleEngine}}" style="flex:1;height:36px;display:flex;align-items:center;justify-content:center;gap:8px">
+              <sc-if value="{{ running }}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg></sc-if>
+              <sc-if value="{{ stopped }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4l13 8-13 8z"></path></svg></sc-if>
+              {{engineLabel}}
+            </button>
+            <button class="btn2" onClick="{{sweep}}" style="flex:1;height:36px;text-align:center">Balayer 0 → limiteur</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Liste des sons -->
+      <section class="listbox" aria-label="Sons détectés" style="flex:1;min-height:0;display:flex;flex-direction:column;border-radius:12px;background:#121316;border:1px solid #23262c;overflow:hidden">
+        <div style="display:grid;grid-template-columns:36px 188px minmax(0,1fr) 140px;gap:16px;align-items:end;padding:12px 16px 8px;border-bottom:1px solid #23262c;color:#9aa0aa;font-size:12px">
+          <span></span>
+          <span>Son</span>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            
+            <div style="position:relative;height:14px">
+              <sc-for list="{{rulerTicks}}" as="t" hint-placeholder-count="6">
+                <span class="mono" style="position:absolute;top:0;transform:translateX(-50%);font-size:11px;color:#8b919b;left:{{t.left}}%">{{t.label}}</span>
+              </sc-for>
+            </div>
+          </div>
+          <span>Volume · hauteur</span>
+        </div>
+
+        <div style="flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:6px">
+          <sc-for list="{{soundRows}}" as="s" hint-placeholder-count="6">
+            <sc-if value="{{ s.isHeader }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:baseline;gap:10px;padding:10px 8px 2px">
+                <span style="font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#d7dbe1">{{s.title}}</span>
+                <span style="color:#8b919b;font-size:12px">{{s.hint}}</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ s.isSound }}" hint-placeholder-val="{{ true }}">
+              <div style="display:grid;grid-template-columns:36px 188px minmax(0,1fr) 140px;gap:16px;align-items:center;padding:8px;border-radius:9px;border:1px solid {{s.bd}};background:{{s.bg}}">
+                <button aria-label="{{s.soloLabel}}" onClick="{{s.toggleSolo}}" style="width:34px;height:34px;border-radius:17px;border:1px solid #333840;background:#181a1e;display:flex;align-items:center;justify-content:center;color:{{s.soloColor}}">
+                  <sc-if value="{{ s.soloOff }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4l13 8-13 8z"></path></svg></sc-if>
+                  <sc-if value="{{ s.soloOn }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg></sc-if>
+                </button>
+                <button onClick="{{s.pick}}" style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                  <span class="mono" style="font-size:13px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{s.name}}</span>
+                  <span style="display:flex;align-items:center;gap:6px;color:#9aa0aa;font-size:12px;white-space:nowrap">{{s.role}}
+                    <sc-if value="{{ s.replaced }}" hint-placeholder-val="{{ false }}"><span style="padding:0 6px;border-radius:4px;border:1px solid {{accent}};color:{{accent}};font-size:11px">Remplacé</span></sc-if>
+                  </span>
+                </button>
+                <button aria-label="{{s.stripLabel}}" onClick="{{s.pick}}" style="position:relative;display:block;width:100%;height:46px;border-radius:6px;background:#0d0e11;border:1px solid #23262c;overflow:hidden">
+                  <div style="position:absolute;top:0;bottom:0;background:{{accentTint}};left:{{s.bandLeft}}%;width:{{s.bandW}}%"></div>
+                  <svg viewBox="0 0 640 40" preserveAspectRatio="none" aria-hidden="true" style="position:absolute;left:0;top:3px;width:100%;height:40px"><path d="{{s.pathOff}}" fill="#343942"></path><path d="{{s.pathOn}}" fill="{{accent}}"></path></svg>
+                  <div style="position:absolute;bottom:0;height:3px;background:{{accent}};left:{{s.bandLeft}}%;width:{{s.bandW}}%"></div>
+                  <div style="position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 6px rgba(255,255,255,.6);left:{{s.head}}%"></div>
+                </button>
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <div style="flex:1;height:5px;border-radius:3px;background:#23262c"><div style="height:100%;border-radius:3px;background:{{accent}};width:{{s.volW}}%"></div></div>
+                    <span class="mono" style="font-size:11px;width:32px;text-align:right;color:{{s.numColor}}">{{s.vol}}</span>
+                  </div>
+                  <span class="mono" style="font-size:11px;color:{{s.numColor}}">pitch {{s.pitch}}</span>
+                </div>
+              </div>
+            </sc-if>
+          </sc-for>
+        </div>
+      </section>
+    </main>
+
+    <!-- Panneau de détails (ouvert) -->
+    <sc-if value="{{ sideOpen }}" hint-placeholder-val="{{ true }}">
+      <aside class="side" style="width:344px;flex:none;display:flex;flex-direction:column;background:#101114;border-left:1px solid #23262c;min-height:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 12px;border-bottom:1px solid #23262c">
+          <div role="tablist" aria-label="Détails du son" style="display:flex;gap:2px">
+            <button role="tab" aria-selected="{{tabInfo}}" onClick="{{goInfo}}" style="height:46px;padding:0 10px;font-weight:500;color:{{tInfoColor}};border-bottom:2px solid {{tInfoLine}}">Infos</button>
+            <button role="tab" aria-selected="{{tabEdit}}" onClick="{{goEdit}}" style="height:46px;padding:0 10px;font-weight:500;color:{{tEditColor}};border-bottom:2px solid {{tEditLine}}">Édition</button>
+            <button role="tab" aria-selected="{{tabIo}}" onClick="{{goIo}}" style="height:46px;padding:0 10px;font-weight:500;color:{{tIoColor}};border-bottom:2px solid {{tIoLine}}">Import / Export</button>
+          </div>
+          <button class="hv" aria-label="Replier le panneau" onClick="{{closeSide}}" style="width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#b6bbc4">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16M9 10l2 2-2 2"></path></svg>
+          </button>
+        </div>
+
+        <div style="flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span class="mono" style="font-size:16px;font-weight:600">{{sel.name}}</span>
+            <span style="color:#9aa0aa;font-size:12px">{{sel.role}} · {{carName}}</span>
+          </div>
+
+          <!-- Onglet Infos -->
+          <sc-if value="{{ tabInfo }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <span style="color:#9aa0aa;font-size:12px">Aperçu · partie utilisée par le régime</span>
+                <div style="position:relative;height:76px;border-radius:8px;background:#0d0e11;border:1px solid #23262c;overflow:hidden">
+                  <div style="position:absolute;top:0;bottom:0;background:{{accentTint}};left:{{sel.bandLeft}}%;width:{{sel.bandW}}%"></div>
+                  <svg viewBox="0 0 640 40" preserveAspectRatio="none" aria-hidden="true" style="position:absolute;left:0;top:6px;width:100%;height:62px"><path d="{{sel.pathOff}}" fill="#343942"></path><path d="{{sel.pathOn}}" fill="{{accent}}"></path></svg>
+                  <div style="position:absolute;top:0;bottom:0;width:2px;background:#fff;left:{{sel.head}}%"></div>
+                </div>
+              </div>
+              <dl style="margin:0;display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px 12px">
+                <dt style="color:#9aa0aa">Statut</dt><dd style="margin:0">{{sel.status}}</dd>
+                <dt style="color:#9aa0aa">Plage de régime</dt><dd class="mono" style="margin:0">{{sel.rangeLabel}}</dd>
+                <dt style="color:#9aa0aa">Fondu</dt><dd class="mono" style="margin:0">{{sel.fadeLabel}}</dd>
+                <dt style="color:#9aa0aa">Déclenchement</dt><dd style="margin:0">{{sel.kindLabel}}</dd>
+                <dt style="color:#9aa0aa">Volume actuel</dt><dd class="mono" style="margin:0">{{sel.vol}}</dd>
+                <dt style="color:#9aa0aa">Hauteur actuelle</dt><dd class="mono" style="margin:0">{{sel.pitch}}</dd>
+                <dt style="color:#9aa0aa">Format</dt><dd class="mono" style="margin:0">PCM 16 bits · 44 100 Hz · mono</dd>
+                <dt style="color:#9aa0aa">Voiture</dt><dd style="margin:0">{{carName}} ({{carGroup}})</dd>
+              </dl>
+            </div>
+          </sc-if>
+
+          <!-- Onglet Édition -->
+          <sc-if value="{{ tabEdit }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:20px">
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <span style="font-weight:600">Remplacement</span>
+                <div style="padding:12px;border-radius:8px;background:#15171b;border:1px dashed #3a3f48;color:#b6bbc4">{{sel.status}}</div>
+                <div style="display:flex;gap:8px">
+                  <button onClick="{{doReplace}}" style="flex:1;height:36px;border-radius:8px;background:{{accent}};color:#111;font-weight:600;text-align:center">Choisir un fichier…</button>
+                  <button class="btn2" disabled="{{sel.noReplaced}}" onClick="{{doRestore}}" style="height:36px;padding:0 14px;text-align:center;opacity:{{sel.restoreOpacity}}">Restaurer</button>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <span style="font-weight:600">Réglages du son remplacé</span>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <label for="gain" style="display:flex;justify-content:space-between"><span>Gain</span><span class="mono">{{gainText}}</span></label>
+                  <input id="gain" type="range" min="-12" max="12" step="0.5" value="{{gain}}" onInput="{{onGain}}">
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <label for="pitch" style="display:flex;justify-content:space-between"><span>Hauteur</span><span class="mono">{{pitchText}}</span></label>
+                  <input id="pitch" type="range" min="-12" max="12" step="1" value="{{pitchSt}}" onInput="{{onPitch}}">
+                </div>
+                <label style="display:flex;align-items:center;gap:10px"><input type="checkbox" checked="{{loop}}" onChange="{{onLoop}}" style="width:16px;height:16px;accent-color:#F5B800"> Lire en boucle</label>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Onglet Import / Export -->
+          <sc-if value="{{ tabIo }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:20px">
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <span style="font-weight:600">Importer</span>
+                <button class="btn2" style="height:56px;padding:0 14px;display:flex;flex-direction:column;justify-content:center;gap:2px">
+                  <span>Importer un fichier audio pour ce son</span>
+                  <span style="color:#9aa0aa;font-size:12px">WAV, OGG ou FLAC</span>
+                </button>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <span style="font-weight:600">Exporter</span>
+                <button class="btn2" style="height:40px;padding:0 14px">Exporter le son original (.wav)</button>
+                <button class="btn2" disabled="{{noneReplaced}}" style="height:40px;padding:0 14px;opacity:{{exportOpacity}}">Exporter les sons remplacés ({{replacedCount}})</button>
+                <button style="height:40px;padding:0 14px;border-radius:8px;background:{{accent}};color:#111;font-weight:600;text-align:center">Exporter le mod complet</button>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </aside>
+    </sc-if>
+
+    <!-- Panneau de détails (replié) -->
+    <sc-if value="{{ sideClosed }}" hint-placeholder-val="{{ false }}">
+      <aside class="rail" style="width:52px;flex:none;display:flex;flex-direction:column;align-items:center;padding:7px 0;background:#101114;border-left:1px solid #23262c">
+        <button class="hv" aria-label="Ouvrir le panneau de détails" onClick="{{openSide}}" style="width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#b6bbc4">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16M11 10l-2 2 2 2"></path></svg>
+        </button>
+      </aside>
+    </sc-if>
+  </div>
+
+  <!-- Barre d'état -->
+  <footer style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:7px 20px;background:#0f1013;border-top:1px solid #23262c;color:#9aa0aa;font-size:12px">
+    <span>Version 0.1.1</span>
+    <span class="mono" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;text-align:center">/run/media/vabyz971/VolumeD/Applications/CXSSM Pack/fmod_assets_all.bundle</span>
+    <span>{{replacedCount}} son(s) remplacé(s) · Encodeur FMOD : OK</span>
+  </footer>
+</div>
+</x-dc>
+
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#F5B800","options":["#F5B800","#FF8A3D","#4FC3F7","#B8E04A"]}}'>
+class Component extends DCLogic {
+  defaults() {
+    return { rpm: 900, load: 0, running: true, holding: false, sweeping: false, mode: 'original',
+      open: { engine: true, V6: true }, query: '', car: 'vR38', sound: null, tab: 'info', side: true,
+      solo: null, replaced: {}, gain: 0, pitchSt: 0, loop: true };
+  }
+  S() { return Object.assign(this.defaults(), this.state || {}); }
+
+  componentDidMount() { this.timer = setInterval(() => this.tick(), 50); }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  groups() {
+    return [
+      { id: 'V8', items: ['engine_V8_CVL','engine_V8_HRD','engine_V8_LRC','engine_V8_S197','engine_V8_CC3','engine_W463','F35','F40','F90','LS','LSC7','maloo','mbgtr','mustangV8','pontiac','R8','RS6','S63','UZ','van','z28'] },
+      { id: 'V6', items: ['400z','Engine','engine_350z','engine_V6_ARG','engine_V6_BGX','engine_V6_JGR','engine_Vq37vhr','GT','nsx','vR38'] },
+      { id: 'Flat', items: ['992','997','Flat4','Flat6','G86','SF'] },
+      { id: 'I4', items: ['190','3SGTE','ca18det','civic'] }
+    ];
+  }
+  groupOf(car) { const g = this.groups().find(x => x.items.indexOf(car) >= 0); return g ? g.id : 'V8'; }
+  hash(str) { let h = 7; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 100003; return h; }
+  limiter(car) { return car === 'vR38' ? 10500 : 7000 + (this.hash(car) % 8) * 500; }
+  noise(seed, i) { const x = Math.sin(seed * 12.9898 + i * 78.233) * 43758.5453; return x - Math.floor(x); }
+  fmt(n) { return Math.round(n).toLocaleString('fr-FR'); }
+  tint(h) { return /^#[0-9a-f]{6}$/i.test(h || '') ? h : '#F5B800'; }
+
+  build(car) {
+    if (this._m && this._m.car === car) return this._m;
+    const L = this.limiter(car), h = this.hash(car), base = 28 + (h % 50);
+    const defs = [
+      { role: 'Ralenti', kind: 'on', a: 0, b: 0.28 },
+      { role: 'Bas régime', kind: 'on', a: 0.18, b: 0.5 },
+      { role: 'Mi-régime', kind: 'on', a: 0.4, b: 0.75 },
+      { role: 'Haut régime', kind: 'on', a: 0.65, b: 1 },
+      { role: 'Bas régime', kind: 'off', a: 0, b: 0.35 },
+      { role: 'Mi-régime', kind: 'off', a: 0.25, b: 0.65 },
+      { role: 'Haut régime', kind: 'off', a: 0.55, b: 1 }
+    ];
+    const N = 64;
+    const sounds = defs.map((d, i) => {
+      const o = Object.assign({}, d, { id: car + ':' + i, name: 'sample_' + String(base + i).padStart(4, '0'), L: L });
+      let on = '', off = '';
+      for (let k = 0; k < N; k++) {
+        const r = (k + 0.5) / N * L, nz = this.noise(h + i * 17, k);
+        const inRange = r >= d.a * L && r <= d.b * L;
+        const x = k * 10 + 2;
+        if (inRange) {
+          const e = Math.max(0.25, this.env(o, r));
+          const hh = 3 + 17 * e * (0.4 + 0.6 * nz);
+          on += 'M' + x + ',' + (20 - hh).toFixed(1) + 'h6v' + (hh * 2).toFixed(1) + 'h-6z';
+        } else {
+          const hh = 1.5 + 4 * nz;
+          off += 'M' + x + ',' + (20 - hh).toFixed(1) + 'h6v' + (hh * 2).toFixed(1) + 'h-6z';
+        }
+      }
+      o.pathOn = on; o.pathOff = off;
+      return o;
+    });
+    this._m = { car: car, L: L, sounds: sounds };
+    return this._m;
+  }
+  env(s, r) {
+    const L = s.L, lo = s.a * L, hi = s.b * L, f = 0.08 * L;
+    if (r < lo || r > hi) return 0;
+    const fi = s.a === 0 ? 1 : Math.min(1, (r - lo) / f);
+    const fo = s.b === 1 ? 1 : Math.min(1, (hi - r) / f);
+    return Math.min(fi, fo);
+  }
+
+  tick() {
+    const s = this.S(), L = this.limiter(s.car);
+    let rpm = Math.min(s.rpm, L), load = s.load, sweeping = s.sweeping;
+    const press = s.running && (s.holding || s.sweeping);
+    load = press ? Math.min(100, load + 30) : Math.max(0, load - 20);
+    if (!s.running) rpm = Math.max(0, rpm - 450);
+    else if (s.holding) rpm = Math.min(L, rpm + 240);
+    else if (sweeping) { rpm = Math.min(L, rpm + 110); if (rpm >= L) sweeping = false; }
+    else rpm = rpm > 900 ? Math.max(900, rpm - 170) : Math.min(900, rpm + 120);
+    if (rpm !== s.rpm || load !== s.load || sweeping !== s.sweeping) this.setState({ rpm: rpm, load: load, sweeping: sweeping });
+  }
+
+  renderVals() {
+    const s = this.S();
+    const accent = this.tint(this.props.accent);
+    const m = this.build(s.car), L = m.L;
+    const rpm = Math.min(s.rpm, L), load = s.load;
+    const q = (s.query || '').trim().toLowerCase();
+
+    // Arborescence
+    const rows = [];
+    let carCount = 0;
+    const groups = this.groups().map(g => ({ id: g.id, items: q ? g.items.filter(n => n.toLowerCase().indexOf(q) >= 0) : g.items }))
+      .filter(g => !q || g.items.length);
+    this.groups().forEach(g => { carCount += g.items.length; });
+    const engineOpen = q ? true : !!s.open.engine;
+    const cat = (key, label, count, opts) => Object.assign({ isRow: true, isNote: false, key: key, label: label, count: count, pad: 10, bg: 'transparent', color: '#d7dbe1', weight: 500, disabled: false, hasChev: true, noChev: false, rot: 0, expanded: undefined, act: () => {} }, opts);
+    rows.push(cat('engine', 'Moteur', q ? '' : '1 247', { rot: engineOpen ? 90 : 0, expanded: engineOpen, weight: 600, color: '#fff', act: () => this.setState({ open: Object.assign({}, s.open, { engine: !s.open.engine }) }) }));
+    if (engineOpen) {
+      groups.forEach(g => {
+        const open = q ? true : !!s.open[g.id];
+        rows.push(cat('g' + g.id, g.id, String(g.items.length), { pad: 28, rot: open ? 90 : 0, expanded: open, act: () => this.setState({ open: Object.assign({}, s.open, { [g.id]: !s.open[g.id] }) }) }));
+        if (open) g.items.forEach(c => {
+          const sel = c === s.car;
+          rows.push(cat('c' + c, c, '', { pad: 52, hasChev: false, noChev: false, bg: sel ? this.tint(accent) + '26' : 'transparent', color: sel ? '#fff' : '#c4c9d1', weight: sel ? 600 : 400, act: () => this.setState({ car: c, sound: null, solo: null }) }));
+        });
+      });
+      if (q && !groups.length) rows.push({ isNote: true, isRow: false, key: 'none', label: 'Aucune voiture trouvée' });
+    }
+    rows.push(cat('turbo', 'Turbo', '0', { disabled: true, hasChev: false, noChev: true, color: '#6f7580' }));
+    rows.push(cat('exhaust', 'Échappement', '0', { disabled: true, hasChev: false, noChev: true, color: '#6f7580' }));
+    const voiceOpen = !!s.open.voices;
+    rows.push(cat('voices', 'Voix', '710', { rot: voiceOpen ? 90 : 0, expanded: voiceOpen, weight: 600, color: '#fff', act: () => this.setState({ open: Object.assign({}, s.open, { voices: !s.open.voices }) }) }));
+    if (voiceOpen) rows.push({ isNote: true, isRow: false, key: 'vn', label: 'Même structure que Moteur (non détaillée ici)' });
+
+    // Sons
+    const selId = (s.sound && s.sound.indexOf(s.car + ':') === 0) ? s.sound : s.car + ':1';
+    const mk = (d) => {
+      const lo = d.a * L, hi = d.b * L;
+      const weight = d.kind === 'on' ? load / 100 : 1 - load / 100;
+      const vol = s.running ? this.env(d, rpm) * weight : 0;
+      const active = vol > 0.01;
+      const ref = (lo + hi) / 2;
+      const pitch = Math.max(0.5, Math.min(2, rpm / ref));
+      const isSel = d.id === selId, isSolo = d.id === s.solo, rep = !!s.replaced[d.id];
+      return {
+        isSound: true, isHeader: false, id: d.id, name: d.name, role: d.role + ' · boucle', roleOnly: d.role,
+        kindLabel: d.kind === 'on' ? 'Charge (pied sur l’accélérateur)' : 'Relâché (décélération)',
+        rangeLabel: this.fmt(lo) + ' – ' + this.fmt(hi) + ' tr/min',
+        fadeLabel: (d.a === 0 ? 'aucun' : this.fmt(0.08 * L)) + ' / ' + (d.b === 1 ? 'aucun' : this.fmt(0.08 * L)) + ' tr/min',
+        bandLeft: (d.a * 100).toFixed(2), bandW: ((d.b - d.a) * 100).toFixed(2), head: (rpm / L * 100).toFixed(2),
+        pathOn: d.pathOn, pathOff: d.pathOff, vol: vol.toFixed(2), volW: (vol * 100).toFixed(0), pitch: pitch.toFixed(2),
+        numColor: active ? '#eceef1' : '#8b919b',
+        bg: isSel ? accent + '1f' : (active ? 'rgba(255,255,255,.035)' : 'transparent'),
+        bd: isSel ? accent : 'transparent',
+        replaced: rep, noReplaced: !rep, restoreOpacity: rep ? 1 : 0.45,
+        status: rep ? 'Remplacé par ' + s.replaced[d.id] : 'Son original du jeu',
+        soloOn: isSolo, soloOff: !isSolo, soloColor: isSolo ? accent : '#d7dbe1',
+        soloLabel: (isSolo ? 'Arrêter ' : 'Écouter seul ') + d.name,
+        stripLabel: 'Sélectionner ' + d.name + ', ' + this.fmt(lo) + ' à ' + this.fmt(hi) + ' tours par minute',
+        pick: () => this.setState({ sound: d.id }),
+        toggleSolo: () => this.setState({ solo: isSolo ? null : d.id, sound: d.id })
+      };
+    };
+    const onS = m.sounds.filter(d => d.kind === 'on').map(mk), offS = m.sounds.filter(d => d.kind === 'off').map(mk);
+    const soundRows = [{ isHeader: true, isSound: false, title: 'Accélération', hint: 'actifs quand la charge monte' }]
+      .concat(onS, [{ isHeader: true, isSound: false, title: 'Décélération', hint: 'actifs quand on relâche' }], offS);
+    const sel = mk(m.sounds.find(d => d.id === selId) || m.sounds[1]);
+
+    // Règles
+    const tachTicks = [], rulerTicks = [];
+    for (let r = 0; r <= L; r += 1000) tachTicks.push({ left: (r / L * 100).toFixed(2), label: r % 2000 === 0 ? String(r / 1000) + 'k' : '·' });
+    for (let r = 0; r < L; r += 2000) rulerTicks.push({ left: (r / L * 100).toFixed(2), label: r === 0 ? '0' : String(r / 1000) + 'k' });
+
+    const replacedCount = Object.keys(s.replaced).length;
+    const tab = s.tab;
+    const act = (on) => ({ bg: on ? accent : 'transparent', c: on ? '#111' : '#d7dbe1' });
+    const og = act(s.mode === 'original'), mg = act(s.mode === 'modified');
+    const holdOn = s.holding;
+    const setTab = (t) => () => this.setState({ tab: t });
+    const keyOk = (e) => e && (e.key === ' ' || e.key === 'Enter');
+
+    return {
+      accent: accent, accentTint: accent + '24', replacedCount: replacedCount,
+      hasQuery: q.length > 0, clearQuery: () => this.setState({ query: '' }),
+      query: s.query, onQuery: (e) => this.setState({ query: e.target.value }),
+      treeSummary: q ? 'Résultats de la recherche' : '130 voitures · 2 963 sons',
+      treeRows: rows,
+      carName: s.car, carGroup: this.groupOf(s.car), breadcrumb: 'Moteur  ›  ' + this.groupOf(s.car),
+      isOriginal: s.mode === 'original', isModified: s.mode === 'modified',
+      origBg: og.bg, origColor: og.c, modBg: mg.bg, modColor: mg.c,
+      setOriginal: () => this.setState({ mode: 'original' }), setModified: () => this.setState({ mode: 'modified' }),
+      rpmText: this.fmt(rpm), rpmPct: (rpm / L * 100).toFixed(2), loadText: String(Math.round(load)),
+      limiterText: this.fmt(L), tachTicks: tachTicks, rulerTicks: rulerTicks,
+      holdBg: holdOn ? accent : accent + '1f', holdColor: holdOn ? '#111' : accent,
+      holdStart: () => this.setState({ holding: true, sweeping: false }),
+      holdEnd: () => { if (this.S().holding) this.setState({ holding: false }); },
+      keyDown: (e) => { if (keyOk(e)) { e.preventDefault(); if (!this.S().holding) this.setState({ holding: true, sweeping: false }); } },
+      keyUp: (e) => { if (keyOk(e)) this.setState({ holding: false }); },
+      toggleEngine: () => this.setState({ running: !s.running, holding: false, sweeping: false }),
+      sweep: () => this.setState({ sweeping: true, holding: false, running: true }),
+      running: s.running, stopped: !s.running, engineLabel: s.running ? 'Arrêter le moteur' : 'Démarrer le moteur',
+      soundRows: soundRows, sel: sel,
+      sideOpen: s.side, sideClosed: !s.side, closeSide: () => this.setState({ side: false }), openSide: () => this.setState({ side: true }),
+      tabInfo: tab === 'info', tabEdit: tab === 'edit', tabIo: tab === 'io',
+      goInfo: setTab('info'), goEdit: setTab('edit'), goIo: setTab('io'),
+      tInfoColor: tab === 'info' ? '#fff' : '#9aa0aa', tInfoLine: tab === 'info' ? accent : 'transparent',
+      tEditColor: tab === 'edit' ? '#fff' : '#9aa0aa', tEditLine: tab === 'edit' ? accent : 'transparent',
+      tIoColor: tab === 'io' ? '#fff' : '#9aa0aa', tIoLine: tab === 'io' ? accent : 'transparent',
+      doReplace: () => this.setState({ replaced: Object.assign({}, s.replaced, { [sel.id]: 'mon_son.wav' }) }),
+      doRestore: () => { const r = Object.assign({}, s.replaced); delete r[sel.id]; this.setState({ replaced: r }); },
+      gain: s.gain, gainText: (s.gain > 0 ? '+' : '') + s.gain.toFixed(1) + ' dB', onGain: (e) => this.setState({ gain: parseFloat(e.target.value) }),
+      pitchSt: s.pitchSt, pitchText: (s.pitchSt > 0 ? '+' : '') + s.pitchSt + ' demi-ton(s)', onPitch: (e) => this.setState({ pitchSt: parseInt(e.target.value, 10) }),
+      loop: s.loop, onLoop: (e) => this.setState({ loop: e.target.checked }),
+      noneReplaced: replacedCount === 0, exportOpacity: replacedCount === 0 ? 0.45 : 1,
+      statusText: s.running ? (s.mode === 'original' ? 'Moteur en marche (sons originaux)' : 'Moteur en marche (sons remplacés)') : 'Moteur arrêté'
+    };
+  }
+}
+</script>
+</body>
+</html>
