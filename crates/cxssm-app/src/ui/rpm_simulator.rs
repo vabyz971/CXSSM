@@ -93,7 +93,20 @@ impl Render for RpmSimulator {
         let lang = s.lang();
 
         if let Some(err) = &e.error {
-            return Self::card().child(div().text_color(theme::TEXT_DIM).child(err.clone())).into_any_element();
+            let missing = s.fmod.is_none();
+            return Self::card()
+                .items_center()
+                .justify_between()
+                .child(div().flex_1().min_w(px(0.)).text_color(theme::TEXT_DIM).child(err.clone()))
+                .when(missing, |d| {
+                    d.child(
+                        crate::widgets::primary("fmod-howto")
+                            .h(theme::BUTTON_H)
+                            .child(s.t("Comment installer FMOD ?", "How to install FMOD?"))
+                            .on_click(crate::widgets::on(&self.state, |s, cx| s.set_fmod_help(true, cx))),
+                    )
+                })
+                .into_any_element();
         }
 
         let max = e.rpm_max().max(1.);

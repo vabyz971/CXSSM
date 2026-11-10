@@ -241,10 +241,8 @@ impl Preferences {
                                 .child(s.t("Encodeur fsbank absent de ce dossier", "fsbank encoder missing from this folder")),
                         }),
                 ),
-            None => div().text_color(theme::DANGER).child(s.t(
-                "FMOD Engine introuvable. Téléchargez-le (gratuit) sur fmod.com/download puis indiquez son dossier.",
-                "FMOD Engine not found. Download it (free) from fmod.com/download, then choose its folder.",
-            )),
+            // Introuvable : le tutoriel d'installation complet.
+            None => super::fmod_setup::guide(s, &self.state),
         };
         let others: Vec<_> = s
             .fmod_detected
@@ -288,7 +286,8 @@ impl Preferences {
                 d.child(div().pt(theme::GAP_SM).font_weight(FontWeight::SEMIBOLD).child(s.t("Autres installations détectées", "Other detected installations")))
                     .children(others)
             })
-            .child(
+            // (Sans FMOD, le tutoriel ci-dessus a déjà ses propres boutons.)
+            .when(s.fmod.is_some(), |d| d.child(
                 div().child(
                     button("choose-fmod")
                         .h(theme::BUTTON_H)
@@ -297,7 +296,7 @@ impl Preferences {
                         .child(s.t("Choisir un dossier…", "Choose a folder…"))
                         .on_click(on(&self.state, |s, cx| s.choose_fmod_dir(cx))),
                 ),
-            )
+            ))
     }
 
     fn updates(&self, s: &AppState) -> gpui::Div {

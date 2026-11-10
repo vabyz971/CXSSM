@@ -168,7 +168,10 @@ the archives to a GitHub Release.
   - `libfmodstudio`, used by the engine simulator.
 
   CXSSM finds it automatically in the usual places, or you can choose its folder in
-  **⚙ Preferences → FMOD Engine**. Environment variables still take precedence if set:
+  **⚙ Preferences → FMOD Engine**. If it is not found, CXSSM opens a step-by-step
+  installation guide on startup: the download link, how to extract or install it on your
+  system, and a button to point to its folder. The guide can also be opened from the status
+  bar and stays available in Preferences → FMOD. Environment variables still take precedence if set:
   ```sh
   # Linux: the binary is called `fsbank` (bin/ folder of the fmodstudioapi…linux archive)
   export CXSSM_FSBANKCL=~/Downloads/fmodstudioapi20400linux/bin/fsbank

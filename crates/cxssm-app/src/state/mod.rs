@@ -136,6 +136,10 @@ pub struct AppState {
     pub detected_bundles: Vec<PathBuf>,
     /// Installations FMOD trouvées par la détection automatique.
     pub fmod_detected: Vec<FmodInstall>,
+    /// Tutoriel d'installation de FMOD ouvert (au démarrage si FMOD est introuvable).
+    pub fmod_help_open: bool,
+    /// Dernier échec de la recherche ou du choix du dossier FMOD.
+    pub fmod_error: Option<SharedString>,
     pub update: UpdateState,
 }
 
@@ -175,8 +179,11 @@ impl AppState {
             prefs_section: PrefSection::General,
             detected_bundles: Vec::new(),
             fmod_detected: Vec::new(),
+            fmod_help_open: false,
+            fmod_error: None,
             update: UpdateState::default(),
         };
+        s.fmod_help_open = s.fmod.is_none();
         if let Some(path) = initial {
             s.open_path(path, cx);
         }
@@ -545,6 +552,8 @@ impl AppState {
 
     /// Utilise cette installation FMOD (encodeur + simulateur) et la mémorise.
     pub fn use_fmod(&mut self, inst: FmodInstall, cx: &mut Context<Self>) {
+        self.fmod_help_open = false;
+        self.fmod_error = None;
         self.settings.fmod_dir = Some(inst.root.clone());
         self.save_settings();
         self.fmod = self.settings.fmod();
@@ -569,14 +578,40 @@ impl AppState {
             let Some(dir) = rfd::AsyncFileDialog::new().set_title(title).pick_folder().await else { return };
             let _ = this.update(cx, |s, cx| match FmodInstall::from_path(dir.path()) {
                 Some(inst) => s.use_fmod(inst, cx),
-                None => s.set_status(
-                    format!("{} : ce n'est pas un dossier FMOD Engine (api/studio introuvable)", dir.path().display()),
-                    format!("{}: not a FMOD Engine folder (api/studio not found)", dir.path().display()),
-                    cx,
-                ),
+                None => {
+                    s.set_status(
+                        format!("{} : ce n'est pas un dossier FMOD Engine (api/studio introuvable)", dir.path().display()),
+                        format!("{}: not a FMOD Engine folder (api/studio not found)", dir.path().display()),
+                        cx,
+                    );
+                    s.fmod_error = Some(s.status.clone());
+                }
             });
         })
         .detach();
+    }
+
+    pub fn set_fmod_help(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.fmod_help_open = open;
+        cx.notify();
+    }
+
+    /// « Rechercher à nouveau » : détection automatique de FMOD aux emplacements habituels.
+    pub fn retry_fmod_detection(&mut self, cx: &mut Context<Self>) {
+        self.fmod_detected = FmodInstall::detect();
+        match FmodInstall::resolve(self.settings.fmod_dir.as_deref()) {
+            Some(inst) => self.use_fmod(inst, cx),
+            None => {
+                self.fmod_error = Some(
+                    self.t(
+                        "Toujours introuvable : indiquez le dossier avec « Choisir le dossier… ».",
+                        "Still not found: point to the folder with “Choose the folder…”.",
+                    )
+                    .into(),
+                );
+                cx.notify();
+            }
+        }
     }
 
     /// Une tâche de fond ou une animation demande de redessiner à chaque image.

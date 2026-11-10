@@ -11,6 +11,7 @@
 use gpui::{div, prelude::*, px, Context, Entity, FontWeight, MouseButton, MouseMoveEvent, Window};
 
 mod app_bar;
+mod fmod_setup;
 mod preferences;
 mod rpm_simulator;
 mod side_panel;
@@ -32,6 +33,7 @@ pub struct Workspace {
     sounds: Entity<sound_list::SoundList>,
     side: Entity<side_panel::SidePanel>,
     prefs: Entity<preferences::Preferences>,
+    fmod_setup: Entity<fmod_setup::FmodSetup>,
 }
 
 impl Workspace {
@@ -44,6 +46,7 @@ impl Workspace {
             sounds: cx.new(|_| sound_list::SoundList::new(state.clone())),
             side: cx.new(|_| side_panel::SidePanel::new(state.clone())),
             prefs: cx.new(|_| preferences::Preferences::new(state.clone())),
+            fmod_setup: cx.new(|_| fmod_setup::FmodSetup::new(state.clone())),
             state,
         }
     }
@@ -191,7 +194,8 @@ impl Render for Workspace {
             .on_mouse_up(MouseButton::Left, on(&state, |s, cx| s.mouse_released(cx)))
             .child(app_bar::render(s, &state))
             .child(body)
-            .child(status_bar::render(s))
+            .child(status_bar::render(s, &state))
             .when(s.prefs_open, |d| d.child(self.prefs.clone()))
+            .when(s.fmod_help_open && !s.prefs_open, |d| d.child(self.fmod_setup.clone()))
     }
 }
