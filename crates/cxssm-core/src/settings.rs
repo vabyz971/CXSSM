@@ -16,16 +16,23 @@ pub enum Language {
 }
 
 impl Language {
-    /// Langue du système (`LANG`, `LC_ALL`…) : français si elle commence par `fr`, sinon anglais.
+    /// Langue du système : français si elle commence par `fr`, **anglais par défaut**.
+    ///
+    /// Les variables `LC_ALL` / `LC_MESSAGES` / `LANG` priment quand elles sont définies
+    /// (Linux, terminal) ; sinon la langue est demandée au système (`sys-locale` :
+    /// réglages de Windows et de macOS, même lancé depuis le Finder).
     pub fn from_system() -> Self {
-        let lang = ["LC_ALL", "LC_MESSAGES", "LANG"]
+        let env = ["LC_ALL", "LC_MESSAGES", "LANG"]
             .iter()
-            .find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()))
-            .unwrap_or_default();
-        if lang.to_lowercase().starts_with("fr") {
-            Self::Fr
-        } else {
-            Self::En
+            .find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty() && s != "C" && s != "POSIX"));
+        Self::from_locale(env.or_else(sys_locale::get_locale).as_deref())
+    }
+
+    /// `fr_FR.UTF-8`, `fr-CA`, `FR`… → français ; tout le reste (ou rien) → anglais.
+    pub fn from_locale(locale: Option<&str>) -> Self {
+        match locale {
+            Some(l) if l.to_lowercase().starts_with("fr") => Self::Fr,
+            _ => Self::En,
         }
     }
 }
@@ -132,5 +139,14 @@ mod tests {
         // Champs manquants → valeurs par défaut.
         let partial: Settings = toml::from_str("language = \"fr\"").unwrap();
         assert!(partial.rpm_limiter && partial.auto_open);
+    }
+
+    #[test]
+    fn language_from_locale_defaults_to_english() {
+        assert_eq!(Language::from_locale(Some("fr_FR.UTF-8")), Language::Fr);
+        assert_eq!(Language::from_locale(Some("fr-CA")), Language::Fr);
+        assert_eq!(Language::from_locale(Some("en_US.UTF-8")), Language::En);
+        assert_eq!(Language::from_locale(Some("de-DE")), Language::En);
+        assert_eq!(Language::from_locale(None), Language::En);
     }
 }

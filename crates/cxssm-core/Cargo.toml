@@ -22,6 +22,7 @@ flate2.workspace = true
 tar.workspace = true
 zip.workspace = true
 self-replace.workspace = true
+sys-locale.workspace = true
 symphonia.workspace = true
 
 [dev-dependencies]

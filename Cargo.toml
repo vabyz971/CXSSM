@@ -41,6 +41,8 @@ flate2 = "1"
 tar = "0.4"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 self-replace = "1"
+# langue du système (Windows, macOS, Linux)
+sys-locale = "0.3"
 hound = "3"                                   # lecture/écriture WAV
 lewton = "0.10"                               # décodage Vorbis (sons FMOD)
 phf = { version = "0.11", features = ["macros"] }
