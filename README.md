@@ -61,10 +61,42 @@ From the command line:
 cxssm engine-map <bundle>                      # list the 130 engine events
 cxssm engine-map <bundle> --event z28          # sound map of the z28
 cxssm extract-banks <bundle> --out banks/      # extract the raw .bank files (Master, V8…)
+cxssm find-game                                # detected game bundles and FMOD Engine installs
+cxssm check-update                             # newer release on GitHub?
 ```
 
 The simulator uses `libfmodstudio` from the FMOD Engine (`api/` folder), loaded at runtime:
 `CXSSM_FMOD_API=…/fmodstudioapi…/api`, or derived automatically from `CXSSM_FSBANKCL`.
+
+## Preferences and game detection
+
+The **⚙ PREFERENCES** button (top bar) opens the settings panel:
+
+- **Language**: French or English (default: system language).
+- **Simulator rev limiter**: on (RPM bounces on the adjustable limiter) or off (RPM climbs to the maximum).
+- **Visible categories**: hide the sidebar categories you don't use.
+- **Game**: open the game bundle automatically on startup, pick one of the detected
+  installations, or choose a file manually.
+- **FMOD Engine**: detected automatically (Downloads, `/opt`, `C:\Program Files (x86)\FMOD SoundSystem`,
+  `/Applications`), or choose its folder manually (root, `api/` or `bin/` all work).
+- **Updates**: check GitHub Releases on startup, then install the new version and restart
+  from the panel (Nix installs are updated with Nix).
+
+CXSSM looks for `fmod_assets_all.bundle` in the default Steam folders and in every Steam library
+listed in `steamapps/libraryfolders.vdf` (games installed on other drives):
+
+| System | Default Steam folders |
+|---|---|
+| Windows | `C:\Program Files (x86)\Steam` |
+| Linux | `~/.local/share/Steam`, `~/.steam/steam`, Flatpak `~/.var/app/com.valvesoftware.Steam/.local/share/Steam` |
+| macOS | `~/Library/Application Support/Steam` |
+
+Inside the game folder it checks `CarX Street_Data/StreamingAssets/aa/*/` (Windows, Linux) and
+`CarX Street.app/Contents/Resources/Data/StreamingAssets/aa/*/` (macOS). `cxssm find-game` prints
+the folders examined and the bundles found.
+
+Settings are stored in `settings.toml` in the system config folder
+(`~/.config/cxssm/`, `%APPDATA%\cxssm\`, `~/Library/Application Support/cxssm/`).
 
 ## Preparing a replacement sound
 
@@ -135,7 +167,8 @@ the archives to a GitHub Release.
     is FMOD Vorbis** (not standard Ogg);
   - `libfmodstudio`, used by the engine simulator.
 
-  Point CXSSM to the encoder **in the terminal that launches the app**:
+  CXSSM finds it automatically in the usual places, or you can choose its folder in
+  **⚙ Preferences → FMOD Engine**. Environment variables still take precedence if set:
   ```sh
   # Linux: the binary is called `fsbank` (bin/ folder of the fmodstudioapi…linux archive)
   export CXSSM_FSBANKCL=~/Downloads/fmodstudioapi20400linux/bin/fsbank
@@ -209,7 +242,8 @@ Principles:
 - Heavy work (opening, export, FMOD analysis) runs on GPUI's background executor so the UI
   never blocks.
 
-The user interface is currently in French; translation contributions are welcome.
+The user interface is available in French and English (`crates/cxssm-app/src/i18n.rs`:
+every text is written in both languages where it is used, e.g. `self.t("Ouvrir", "Open")`).
 
 ## Roadmap
 
@@ -222,9 +256,12 @@ The user interface is currently in French; translation contributions are welcome
 - [x] Engine simulator (FMOD Studio API): live RPM/load, active layers, sound map, rev limiter
 - [ ] **In-game test of a replaced sound**
 - [ ] Native FMOD Vorbis encoder (would remove the `fsbank` dependency)
+- [x] Preferences: language (FR/EN), rev limiter on/off, visible categories, game auto-detection
 - [ ] Search, drag & drop, bank list in the sidebar
 - [ ] Automatic resampling and mono/stereo conversion
-- [ ] `fsbank` path and quality settings in the UI
+- [x] FMOD Engine auto-detection and folder setting in the UI
+- [x] Update check and install from GitHub Releases
+- [ ] Encoding quality setting in the UI
 - [ ] Save / reopen a mod project (`.cxssm`)
 - [ ] Credits / About screen (FMOD attribution)
 

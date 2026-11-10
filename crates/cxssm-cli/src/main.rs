@@ -16,6 +16,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Vérifie si une nouvelle version de CXSSM est publiée sur GitHub.
+    CheckUpdate,
+    /// Cherche l'installation de CarX Street (bibliothèques Steam) et le FMOD Engine.
+    FindGame,
     /// Affiche la structure brute du bundle (nœuds, tailles).
     Bundle { bundle: PathBuf },
     /// Extrait toutes les banques FMOD (.bank brutes, y compris Master) dans un dossier.
@@ -26,7 +30,7 @@ enum Cmd {
     },
     /// Liste les évènements moteur (une voiture = un évènement) ou, avec `--event`,
     /// la carte des sons utilisés selon le régime. Nécessite l'API FMOD Studio
-    /// (`CXSSM_FMOD_API`, ou déduite de `CXSSM_FSBANKCL`).
+    /// (détectée automatiquement, ou `CXSSM_FMOD_API`).
     EngineMap {
         bundle: PathBuf,
         /// Nom de l'évènement (ex. `eng_V8_MGTC`).
@@ -64,6 +68,43 @@ enum Cmd {
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     match Cli::parse().cmd {
+        Cmd::CheckUpdate => {
+            use cxssm_core::update;
+            println!("Version installée : {}", update::CURRENT_VERSION);
+            match update::check()? {
+                None => println!("À jour (aucune release plus récente sur github.com/{}).", update::REPO),
+                Some(r) => {
+                    println!("Nouvelle version : {} → {}", r.tag, r.page);
+                    match r.asset {
+                        Some(a) => println!("Archive : {} ({} Mo)", a.name, a.size / 1_000_000),
+                        None => println!("Pas d'archive publiée pour ce système."),
+                    }
+                }
+            }
+        }
+        Cmd::FindGame => {
+            use cxssm_core::game;
+            println!("Bibliothèques Steam examinées :");
+            for dir in game::candidate_game_dirs() {
+                println!("  {} {}", if dir.is_dir() { "✔" } else { "·" }, dir.display());
+            }
+            let found = game::find_bundles();
+            if found.is_empty() {
+                println!("Aucun {} trouvé.", game::BUNDLE_NAME);
+            }
+            for b in found {
+                println!("→ {}", b.display());
+            }
+            println!("\nFMOD Engine :");
+            let installs = cxssm_core::FmodInstall::detect();
+            if installs.is_empty() {
+                println!("  aucune installation détectée (https://www.fmod.com/download)");
+            }
+            for f in installs {
+                let enc = f.fsbank.as_ref().map_or("encodeur absent".into(), |p| p.display().to_string());
+                println!("→ {}  ({enc})", f.root.display());
+            }
+        }
         Cmd::Bundle { bundle } => {
             let b = cxssm_unity::Bundle::open(&bundle).context("ouverture du bundle")?;
             println!("UnityFS v{} – Unity {} – {:?}", b.format_version, b.unity_revision, b.compression);
@@ -91,8 +132,9 @@ fn main() -> Result<()> {
         }
         Cmd::EngineMap { bundle, event, step } => {
             use cxssm_core::engine;
-            let api = engine::find_api_dir().context("dossier api FMOD introuvable : définissez CXSSM_FMOD_API")?;
-            let lib = engine::load_library(&api)?;
+            let fmod = cxssm_core::FmodInstall::resolve(None)
+                .context("FMOD Engine introuvable : installez-le ou définissez CXSSM_FMOD_API")?;
+            let lib = engine::load_library(&fmod.api)?;
             let p = ModProject::open(&bundle)?;
             let data = engine::EngineData::from_project(&p);
             let events = engine::list_events(&lib, &data)?;
@@ -141,6 +183,7 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Replace { bundle, bank, sound, file, out, fsbankcl, quality } => {
+            let fsbankcl = fsbankcl.or_else(|| cxssm_core::FmodInstall::resolve(None).and_then(|f| f.fsbank));
             let mut p = ModProject::open(&bundle)?;
             let r: SoundRef = match p.sounds().find(|(_, b, s)| b.name == bank && s.name == sound) {
                 Some((r, _, _)) => r,

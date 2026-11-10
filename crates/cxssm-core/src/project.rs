@@ -9,7 +9,8 @@ use cxssm_unity::{Bundle, SerializedFile, TextAsset, CLASS_TEXT_ASSET};
 use crate::error::{Error, Result};
 
 /// Classement indicatif d'après le nom du son ou de la banque.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SoundCategory {
     Engine,
     Turbo,

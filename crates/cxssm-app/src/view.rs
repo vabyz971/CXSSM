@@ -3,14 +3,20 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use cxssm_core::{encoder::EncoderConfig, export, preview, ModProject, SoundCategory, SoundRef, SoundStatus};
+use cxssm_core::{
+    encoder::EncoderConfig, export, preview, FmodInstall, Language, ModProject, Settings, SoundCategory, SoundRef,
+    SoundStatus,
+};
 use gpui::{
     div, point, prelude::*, px, uniform_list, ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent,
     MouseMoveEvent, Pixels, SharedString, UniformListScrollHandle, Window,
 };
 
 mod engine_panel;
+mod preferences;
+mod updates_panel;
 
+use crate::i18n::{self, tr};
 use crate::player::Player;
 use crate::theme;
 use crate::widgets::{badge, ghost_button, primary_button, section_title, spec_row};
@@ -65,10 +71,30 @@ pub struct MainView {
     playing: Option<Playing>,
     /// Son en cours de décodage (affiche « … » sur la ligne).
     decoding: Option<SoundRef>,
+    /// Préférences (langue, rupteur, catégories, ouverture automatique du jeu).
+    settings: Settings,
+    /// Panneau des préférences ouvert.
+    prefs_open: bool,
+    /// Bundles du jeu trouvés par la détection automatique.
+    detected: Vec<PathBuf>,
+    /// FMOD Engine utilisé (encodeur + simulateur).
+    fmod: Option<FmodInstall>,
+    /// Installations FMOD trouvées par la détection automatique (préférences).
+    fmod_detected: Vec<FmodInstall>,
+    /// Mise à jour : état de la vérification sur GitHub.
+    update: updates_panel::UpdateState,
 }
 
 impl MainView {
     pub fn new(cx: &mut Context<Self>, initial: Option<PathBuf>) -> Self {
+        let settings = Settings::load();
+        let fmod = settings.fmod();
+        match &fmod {
+            Some(f) => log::info!("FMOD Engine : {}", f.root.display()),
+            None => log::warn!("FMOD Engine introuvable"),
+        }
+        // Bundle passé en argument, sinon celui du jeu (choisi ou détecté automatiquement).
+        let initial = initial.or_else(|| settings.startup_bundle());
         let player = Player::new().map_err(|e| log::warn!("pas de sortie audio : {e}")).ok();
         let mut view = Self {
             project: None,
@@ -80,35 +106,83 @@ impl MainView {
             engine_mode: false,
             engine: engine_panel::EngineState::default(),
             selected: None,
-            status: "Ouvrez fmod_assets_all.bundle pour commencer".into(),
+            status: tr(settings.language, "Ouvrez fmod_assets_all.bundle pour commencer", "Open fmod_assets_all.bundle to get started").into(),
             busy: false,
             encoder: EncoderConfig {
-                fsbankcl: std::env::var_os("CXSSM_FSBANKCL").map(PathBuf::from),
+                fsbankcl: fmod.as_ref().and_then(|f| f.fsbank.clone()),
                 quality: 80,
             },
             player,
             playing: None,
             decoding: None,
+            settings,
+            prefs_open: false,
+            detected: Vec::new(),
+            fmod,
+            fmod_detected: Vec::new(),
+            update: Default::default(),
         };
         if let Some(path) = initial {
             view.open_path(path, cx);
         }
+        if view.settings.check_updates {
+            view.check_updates(true, cx);
+        }
         view
+    }
+
+    // ───────────────────────────── langue ─────────────────────────────
+
+    /// Texte dans la langue de l'interface.
+    pub(crate) fn t(&self, fr: &'static str, en: &'static str) -> &'static str {
+        tr(self.settings.language, fr, en)
+    }
+
+    /// Variante pour les textes formatés (les deux versions sont fournies).
+    pub(crate) fn tf(&self, fr: String, en: String) -> String {
+        match self.settings.language {
+            Language::Fr => fr,
+            Language::En => en,
+        }
+    }
+
+    /// Message de la barre d'état décrivant le bundle chargé, dans la langue courante.
+    pub(crate) fn summary_status(&self) -> SharedString {
+        match &self.project {
+            Some(p) => self
+                .tf(
+                    format!("{} banques, {} sons trouvés", p.banks.len(), p.sounds().count()),
+                    format!("{} banks, {} sounds found", p.banks.len(), p.sounds().count()),
+                )
+                .into(),
+            None => self.t("Ouvrez fmod_assets_all.bundle pour commencer", "Open fmod_assets_all.bundle to get started").into(),
+        }
+    }
+
+    pub(crate) fn save_settings(&self) {
+        if let Err(e) = self.settings.save() {
+            log::error!("enregistrement des préférences : {e}");
+        }
     }
 
     // ───────────────────────────── ouverture / export ─────────────────────────────
 
     fn open_dialog(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.open_file_dialog(cx);
+    }
+
+    pub(crate) fn open_file_dialog(&mut self, cx: &mut Context<Self>) {
+        let title = self.t("Ouvrir fmod_assets_all.bundle", "Open fmod_assets_all.bundle");
         cx.spawn(async move |this, cx| {
             let file = rfd::AsyncFileDialog::new()
-                .set_title("Ouvrir fmod_assets_all.bundle")
+                .set_title(title)
                 .add_filter("AssetBundle Unity", &["bundle"])
                 .pick_file()
                 .await;
             let _ = this.update(cx, |v, cx| match file {
                 Some(f) => v.open_path(f.path().to_path_buf(), cx),
                 None => {
-                    v.status = "Ouverture annulée".into();
+                    v.status = v.t("Ouverture annulée", "Opening cancelled").into();
                     cx.notify();
                 }
             });
@@ -119,7 +193,7 @@ impl MainView {
     fn open_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         log::info!("ouverture de {}", path.display());
         self.busy = true;
-        self.status = format!("Analyse de {}…", path.display()).into();
+        self.status = self.tf(format!("Analyse de {}…", path.display()), format!("Reading {}…", path.display())).into();
         cx.notify();
         cx.spawn(async move |this, cx| {
             let result = cx.background_spawn(async move { ModProject::open(path) }).await;
@@ -127,9 +201,8 @@ impl MainView {
                 v.busy = false;
                 match result {
                     Ok(p) => {
-                        v.status =
-                            format!("{} banques, {} sons trouvés", p.banks.len(), p.sounds().count()).into();
                         v.project = Some(p);
+                        v.status = v.summary_status();
                         v.selected = None;
                         v.engine.reset();
                         v.engine_mode = false;
@@ -137,7 +210,7 @@ impl MainView {
                     }
                     Err(e) => {
                         log::error!("ouverture : {e}");
-                        v.status = format!("Erreur : {e}").into();
+                        v.status = v.tf(format!("Erreur : {e}"), format!("Error: {e}")).into();
                     }
                 }
                 cx.notify();
@@ -148,13 +221,14 @@ impl MainView {
 
     fn export_mod(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         if self.project.as_ref().is_none_or(|p| p.replacements.is_empty()) {
-            self.status = "Aucun son remplacé : rien à exporter".into();
+            self.status = self.t("Aucun son remplacé : rien à exporter", "No replaced sound: nothing to export").into();
             cx.notify();
             return;
         }
+        let title = self.t("Dossier de sortie du mod (Steam Workshop)", "Mod output folder (Steam Workshop)");
         cx.spawn(async move |this, cx| {
             let Some(dir) = rfd::AsyncFileDialog::new()
-                .set_title("Dossier de sortie du mod (Steam Workshop)")
+                .set_title(title)
                 .pick_folder()
                 .await
             else {
@@ -163,7 +237,7 @@ impl MainView {
             // Le projet est emprunté le temps de l'export puis rendu à la vue.
             let taken = this.update(cx, |v, cx| {
                 v.busy = true;
-                v.status = "Export en cours…".into();
+                v.status = v.t("Export en cours…", "Exporting…").into();
                 cx.notify();
                 (v.project.take(), v.encoder.clone())
             });
@@ -179,8 +253,8 @@ impl MainView {
                 v.project = Some(project);
                 v.busy = false;
                 v.status = match result {
-                    Ok(p) => format!("Mod exporté : {}", p.display()).into(),
-                    Err(e) => format!("Erreur d'export : {e}").into(),
+                    Ok(p) => v.tf(format!("Mod exporté : {}", p.display()), format!("Mod exported: {}", p.display())).into(),
+                    Err(e) => v.tf(format!("Erreur d'export : {e}"), format!("Export error: {e}")).into(),
                 };
                 cx.notify();
             });
@@ -192,9 +266,10 @@ impl MainView {
 
     fn pick_replacement(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         let Some(r) = self.selected else { return };
+        let title = self.t("Choisir le son de remplacement", "Choose the replacement sound");
         cx.spawn(async move |this, cx| {
             let Some(file) = rfd::AsyncFileDialog::new()
-                .set_title("Choisir le son de remplacement")
+                .set_title(title)
                 .add_filter("Audio", &["wav", "ogg", "flac", "mp3"])
                 .pick_file()
                 .await
@@ -270,7 +345,7 @@ impl MainView {
                 self.playing = Some(what);
                 self.watch_playback(cx);
             }
-            Err(e) => self.status = format!("Lecture impossible : {e}").into(),
+            Err(e) => self.status = self.tf(format!("Lecture impossible : {e}"), format!("Cannot play: {e}")).into(),
         }
         cx.notify();
     }
@@ -310,20 +385,21 @@ impl MainView {
         let Some((bank, sample)) = self.project.as_ref().and_then(|p| p.sample(r)) else { return };
         let default_name = format!("{}_{}", bank.name, sample.name);
         let (codec, sample) = (bank.fsb.codec, sample.clone());
+        let title = self.t("Enregistrer le son d'origine", "Save the original sound");
         cx.spawn(async move |this, cx| {
             let decoded = cx.background_spawn(async move { preview::decode(codec, &sample) }).await;
             let decoded = match decoded {
                 Ok(d) => d,
                 Err(e) => {
                     let _ = this.update(cx, |v, cx| {
-                        v.status = format!("Décodage impossible : {e}").into();
+                        v.status = v.tf(format!("Décodage impossible : {e}"), format!("Cannot decode: {e}")).into();
                         cx.notify();
                     });
                     return;
                 }
             };
             let Some(file) = rfd::AsyncFileDialog::new()
-                .set_title("Enregistrer le son d'origine")
+                .set_title(title)
                 .set_file_name(format!("{default_name}.{}", decoded.extension))
                 .save_file()
                 .await
@@ -333,8 +409,8 @@ impl MainView {
             let res = std::fs::write(file.path(), &decoded.bytes);
             let _ = this.update(cx, |v, cx| {
                 v.status = match res {
-                    Ok(()) => format!("Enregistré : {}", file.path().display()).into(),
-                    Err(e) => format!("Erreur : {e}").into(),
+                    Ok(()) => v.tf(format!("Enregistré : {}", file.path().display()), format!("Saved: {}", file.path().display())).into(),
+                    Err(e) => v.tf(format!("Erreur : {e}"), format!("Error: {e}")).into(),
                 };
                 cx.notify();
             });
@@ -393,11 +469,6 @@ impl MainView {
     // ───────────────────────────── rendu ─────────────────────────────
 
     fn render_topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let source = self
-            .project
-            .as_ref()
-            .map(|p| p.source.display().to_string())
-            .unwrap_or_else(|| "Aucun bundle chargé".into());
         div()
             .flex()
             .flex_none()
@@ -415,15 +486,18 @@ impl MainView {
                     .gap_3()
                     .overflow_hidden()
                     .child(div().text_xl().font_weight(FontWeight::EXTRA_BOLD).child("CXSSM"))
-                    .child(div().ml_6().text_sm().text_color(theme::text_dim()).child(source)),
             )
             .child(
                 div()
                     .flex()
                     .flex_none()
                     .gap_2()
-                    .child(ghost_button("open", "OUVRIR LE BUNDLE").on_click(cx.listener(Self::open_dialog)))
-                    .child(primary_button("export", "EXPORTER LE MOD").on_click(cx.listener(Self::export_mod))),
+                    .child(
+                        ghost_button("prefs", self.t("⚙ PRÉFÉRENCES", "⚙ PREFERENCES"))
+                            .on_click(cx.listener(|v, _, _, cx| v.open_preferences(cx))),
+                    )
+                    .child(ghost_button("open", self.t("OUVRIR LE BUNDLE", "OPEN BUNDLE")).on_click(cx.listener(Self::open_dialog)))
+                    .child(primary_button("export", self.t("EXPORTER LE MOD", "EXPORT MOD")).on_click(cx.listener(Self::export_mod))),
             )
     }
 
@@ -461,13 +535,16 @@ impl MainView {
             .bg(theme::panel())
             .border_r_1()
             .border_color(theme::border())
-            .child(div().px_4().pb_2().child(section_title("CATÉGORIES")))
-            .child(item(0, "Tous les sons", None, self.filter.is_none()));
+            .child(div().px_4().pb_2().child(section_title(self.t("CATÉGORIES", "CATEGORIES"))))
+            .child(item(0, self.t("Tous les sons", "All sounds"), None, self.filter.is_none()));
         for (i, c) in CATEGORIES.iter().enumerate() {
-            side = side.child(item(i + 1, c.label(), Some(*c), self.filter == Some(*c)));
+            if self.settings.is_hidden(*c) {
+                continue;
+            }
+            side = side.child(item(i + 1, i18n::category(self.settings.language, *c), Some(*c), self.filter == Some(*c)));
         }
         let sim_active = self.engine_mode;
-        side.child(div().px_4().pt_6().pb_2().child(section_title("SIMULATEUR")))
+        side.child(div().px_4().pt_6().pb_2().child(section_title(self.t("SIMULATEUR", "SIMULATOR"))))
             .child(
                 div()
                     .id("engine-mode")
@@ -480,7 +557,7 @@ impl MainView {
                     .when(sim_active, |d| d.bg(theme::panel_hi()))
                     .hover(|s| s.bg(theme::panel_hi()))
                     .text_color(if sim_active { theme::text() } else { theme::text_dim() })
-                    .child("Moteur (RPM)")
+                    .child(self.t("Moteur (RPM)", "Engine (RPM)"))
                     .on_click(cx.listener(|v, _, _, cx| v.enter_engine_mode(cx))),
             )
     }
@@ -543,10 +620,10 @@ impl MainView {
             .text_xs()
             .text_color(theme::text_dim())
             .child(div().w(px(36.)))
-            .child(div().w(px(200.)).child("BANQUE"))
-            .child(div().flex_1().child("SON"))
+            .child(div().w(px(200.)).child(self.t("BANQUE", "BANK")))
+            .child(div().flex_1().child(self.t("SON", "SOUND")))
             .child(div().w(px(150.)).child("FORMAT"))
-            .child(div().w(px(80.)).child("DURÉE"))
+            .child(div().w(px(80.)).child(self.t("DURÉE", "LENGTH")))
             .child(div().w(px(30.)));
 
         let body = if self.project.is_none() {
@@ -651,14 +728,14 @@ impl MainView {
                 .border_1()
                 .border_color(theme::border())
                 .bg(theme::panel())
-                .child(div().text_lg().font_weight(FontWeight::BOLD).child("AUCUN BUNDLE CHARGÉ"))
+                .child(div().text_lg().font_weight(FontWeight::BOLD).child(self.t("AUCUN BUNDLE CHARGÉ", "NO BUNDLE LOADED")))
                 .child(
                     div()
                         .text_sm()
                         .text_color(theme::text_dim())
                         .child("CarX Street_Data/StreamingAssets/aa/<plateforme>/fmod_assets_all.bundle"),
                 )
-                .child(primary_button("open-empty", "OUVRIR LE BUNDLE").on_click(cx.listener(Self::open_dialog))),
+                .child(primary_button("open-empty", self.t("OUVRIR LE BUNDLE", "OPEN BUNDLE")).on_click(cx.listener(Self::open_dialog))),
         )
     }
 
@@ -677,8 +754,8 @@ impl MainView {
 
         let (Some(p), Some(r)) = (self.project.as_ref(), self.selected) else {
             return panel
-                .child(section_title("DÉTAILS"))
-                .child(div().text_sm().text_color(theme::text_dim()).child("Sélectionnez un son dans la liste."));
+                .child(section_title(self.t("DÉTAILS", "DETAILS")))
+                .child(div().text_sm().text_color(theme::text_dim()).child(self.t("Sélectionnez un son dans la liste.", "Select a sound in the list.")));
         };
         let Some((bank, s)) = p.sample(r) else { return panel };
         let codec = p.codec(r).map(|c| c.to_string()).unwrap_or_default();
@@ -688,7 +765,7 @@ impl MainView {
 
         let replacement = match &status {
             SoundStatus::Original => {
-                div().text_sm().text_color(theme::text_dim()).child("Son d'origine (non modifié)")
+                div().text_sm().text_color(theme::text_dim()).child(self.t("Son d'origine (non modifié)", "Original sound (unchanged)"))
             }
             SoundStatus::Replaced(f) => div()
                 .flex()
@@ -707,7 +784,7 @@ impl MainView {
         let has_replacement = !matches!(status, SoundStatus::Original);
 
         panel
-            .child(section_title("SON SÉLECTIONNÉ"))
+            .child(section_title(self.t("SON SÉLECTIONNÉ", "SELECTED SOUND")))
             .child(
                 div()
                     .flex()
@@ -720,45 +797,50 @@ impl MainView {
                     .flex()
                     .gap_2()
                     .child(
-                        primary_button("play-orig", if playing_orig { "■ STOP" } else { "▶ ÉCOUTER" })
+                        primary_button("play-orig", if playing_orig { "■ STOP" } else { self.t("▶ ÉCOUTER", "▶ PLAY") })
                             .on_click(cx.listener(move |v, _, _, cx| v.toggle_original(r, cx))),
                     )
-                    .child(ghost_button("save-orig", "ENREGISTRER…").on_click(cx.listener(Self::save_original))),
+                    .child(ghost_button("save-orig", self.t("ENREGISTRER…", "SAVE…")).on_click(cx.listener(Self::save_original))),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .child(section_title("CARACTÉRISTIQUES À RESPECTER"))
+                    .child(section_title(self.t("CARACTÉRISTIQUES À RESPECTER", "REQUIRED FORMAT")))
                     .child(spec_row("Codec", codec))
-                    .child(spec_row("Fréquence", format!("{} Hz", s.frequency)))
-                    .child(spec_row("Canaux", s.channels.to_string()))
-                    .child(spec_row("Durée", format!("{:.2} s", s.duration_secs())))
-                    .child(spec_row("Boucle", s.loop_range.map_or("non".into(), |(a, b)| format!("{a} → {b}")))),
+                    .child(spec_row(self.t("Fréquence", "Sample rate"), format!("{} Hz", s.frequency)))
+                    .child(spec_row(self.t("Canaux", "Channels"), s.channels.to_string()))
+                    .child(spec_row(self.t("Durée", "Length"), format!("{:.2} s", s.duration_secs())))
+                    .child(spec_row(self.t("Boucle", "Loop"), s.loop_range.map_or(self.t("non", "no").into(), |(a, b)| format!("{a} → {b}")))),
             )
-            .child(div().flex().flex_col().gap_2().child(section_title("REMPLACEMENT")).child(replacement))
+            .child(div().flex().flex_col().gap_2().child(section_title(self.t("REMPLACEMENT", "REPLACEMENT"))).child(replacement))
             .child(
                 div()
                     .flex()
                     .flex_wrap()
                     .gap_2()
-                    .child(primary_button("replace", "REMPLACER…").on_click(cx.listener(Self::pick_replacement)))
+                    .child(primary_button("replace", self.t("REMPLACER…", "REPLACE…")).on_click(cx.listener(Self::pick_replacement)))
                     .when(has_replacement, |d| {
                         d.child(
-                            ghost_button("play-repl", if playing_repl { "■ STOP" } else { "▶ NOUVEAU" })
+                            ghost_button("play-repl", if playing_repl { "■ STOP" } else { self.t("▶ NOUVEAU", "▶ NEW") })
                                 .on_click(cx.listener(Self::toggle_replacement)),
                         )
-                        .child(ghost_button("restore", "RÉTABLIR").on_click(cx.listener(Self::restore_original)))
+                        .child(ghost_button("restore", self.t("RÉTABLIR", "RESTORE")).on_click(cx.listener(Self::restore_original)))
                     }),
             )
     }
 
     fn render_statusbar(&self) -> impl IntoElement {
+        let source = self
+            .project
+            .as_ref()
+            .map(|p| p.source.display().to_string())
+            .unwrap_or_else(|| self.t("Aucun bundle chargé", "No bundle loaded").into());
         let replaced = self.project.as_ref().map_or(0, |p| p.replacements.len());
         let fsbank = if self.encoder.fsbankcl.is_some() {
-            "encodeur FMOD : OK"
+            self.t("encodeur FMOD : OK", "FMOD encoder: OK")
         } else {
-            "encodeur FMOD : non configuré (CXSSM_FSBANKCL)"
+            self.t("encodeur FMOD : introuvable (⚙ Préférences)", "FMOD encoder: not found (⚙ Preferences)")
         };
         div()
             .flex()
@@ -772,8 +854,14 @@ impl MainView {
             .border_color(theme::border())
             .text_xs()
             .text_color(theme::text_dim())
-            .child(format!("{}{}", if self.busy { "⏳ " } else { "" }, self.status))
-            .child(format!("{replaced} son(s) remplacé(s)  ·  {fsbank}"))
+            .gap_6()
+            .child(div().flex_none().child(format!("{}{}", if self.busy { "⏳ " } else { "" }, self.status)))
+            // Chemin du bundle ouvert (au centre, tronqué s'il est trop long).
+            .child(div().flex_1().min_w(px(0.)).truncate().text_center().child(source))
+            .child(div().flex_none().child(self.tf(
+                format!("{replaced} son(s) remplacé(s)  ·  {fsbank}"),
+                format!("{replaced} replaced sound(s)  ·  {fsbank}"),
+            )))
     }
 }
 
@@ -791,10 +879,12 @@ impl Render for MainView {
             window.request_animation_frame();
         }
         // Simulateur : accélérateur, paramètres FMOD et sons entendus, à chaque image.
+        self.engine.limiter_enabled = self.settings.rpm_limiter;
         self.engine.tick();
         let dragging_slider = self.engine.dragging;
         div()
             .id("root")
+            .relative()
             .flex()
             .flex_col()
             .size_full()
@@ -846,5 +936,6 @@ impl Render for MainView {
                     .child(self.render_details(cx)),
             )
             .child(self.render_statusbar())
+            .when(self.prefs_open, |d| d.child(self.render_preferences(cx)))
     }
 }

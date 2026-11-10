@@ -53,6 +53,8 @@ pub(super) struct EngineState {
     pub(super) throttle: bool,
     /// Le régime est piloté par l'accélérateur (sinon par le curseur).
     auto: bool,
+    /// Rupteur activé (préférences). Désactivé : le régime monte jusqu'au maximum.
+    pub(super) limiter_enabled: bool,
     /// Régime du rupteur (par défaut : le maximum de l'évènement).
     limiter: f32,
     /// Temps restant de la coupure du rupteur en cours (secondes).
@@ -85,6 +87,7 @@ impl Default for EngineState {
             load: 0.,
             throttle: false,
             auto: false,
+            limiter_enabled: true,
             limiter: 10_500.,
             cut: 0.,
             last_tick: None,
@@ -130,7 +133,9 @@ impl EngineState {
             } else if self.throttle {
                 self.rpm += RPM_RISE * dt;
                 self.load = 1.;
-                if self.rpm >= self.limiter {
+                if !self.limiter_enabled {
+                    self.rpm = self.rpm.min(self.rpm_max());
+                } else if self.rpm >= self.limiter {
                     self.rpm = self.limiter;
                     self.cut = LIMITER_CUT;
                 }
@@ -172,7 +177,16 @@ impl EngineState {
 
     /// Le rupteur est en train de couper (ou le régime rebondit dessus).
     fn limiting(&self) -> bool {
-        self.auto && self.throttle && (self.cut > 0. || self.rpm >= self.limiter - 400.)
+        self.limiter_enabled && self.auto && self.throttle && (self.cut > 0. || self.rpm >= self.limiter - 400.)
+    }
+
+    pub(super) fn has_library(&self) -> bool {
+        self.lib.is_some()
+    }
+
+    /// Permet de réessayer de charger FMOD après un changement de dossier.
+    pub(super) fn clear_error(&mut self) {
+        self.error = None;
     }
 
     pub(super) fn reset(&mut self) {
@@ -186,16 +200,18 @@ impl MainView {
     /// Ouvre le simulateur : charge FMOD et la liste des voitures (une seule fois).
     pub(super) fn enter_engine_mode(&mut self, cx: &mut Context<Self>) {
         self.engine_mode = true;
+        let not_found = self.t(
+            "FMOD Engine introuvable : installez-le (fmod.com/download) ou indiquez son dossier \
+             dans ⚙ Préférences.",
+            "FMOD Engine not found: install it (fmod.com/download) or set its folder \
+             in ⚙ Preferences.",
+        );
+        let api = self.fmod.as_ref().map(|f| f.api.clone());
         let e = &mut self.engine;
         if e.lib.is_none() {
-            match engine::find_api_dir() {
-                None => {
-                    e.error = Some(
-                        "API FMOD Studio introuvable : définissez CXSSM_FMOD_API=…/fmodstudioapi…/api \
-                         (ou CXSSM_FSBANKCL vers …/bin/fsbank)"
-                            .into(),
-                    );
-                }
+            e.error = None;
+            match api {
+                None => e.error = Some(not_found.into()),
                 Some(dir) => match engine::load_library(&dir) {
                     Ok(lib) => e.lib = Some(lib),
                     Err(err) => e.error = Some(format!("FMOD : {err}").into()),
@@ -220,7 +236,7 @@ impl MainView {
                 v.engine.loading_events = false;
                 match res {
                     Ok(list) => {
-                        v.status = format!("{} voitures (évènements moteur) trouvées", list.len()).into();
+                        v.status = v.tf(format!("{} voitures (évènements moteur) trouvées", list.len()), format!("{} cars (engine events) found", list.len())).into();
                         v.engine.events = list;
                     }
                     Err(err) => v.engine.error = Some(format!("FMOD : {err}").into()),
@@ -273,9 +289,9 @@ impl MainView {
         self.stop(cx);
         self.engine.starting = true;
         self.status = if modded.is_some() {
-            "Encodage de vos sons et démarrage du moteur…".into()
+            self.t("Encodage de vos sons et démarrage du moteur…", "Encoding your sounds and starting the engine…").into()
         } else {
-            "Démarrage du moteur…".into()
+            self.t("Démarrage du moteur…", "Starting the engine…").into()
         };
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -293,16 +309,16 @@ impl MainView {
                 match res {
                     Ok(sim) => {
                         v.status = if sim.modded {
-                            "Moteur démarré avec VOS sons".into()
+                            v.t("Moteur démarré avec VOS sons", "Engine started with YOUR sounds").into()
                         } else {
-                            "Moteur démarré (sons d'origine)".into()
+                            v.t("Moteur démarré (sons d'origine)", "Engine started (original sounds)").into()
                         };
                         v.engine.sim = Some(sim);
                         v.engine.last_tick = None;
                     }
                     Err(err) => {
                         log::error!("simulateur : {err}");
-                        v.status = format!("Simulateur : {err}").into();
+                        v.status = v.tf(format!("Simulateur : {err}"), format!("Simulator: {err}")).into();
                     }
                 }
                 cx.notify();
@@ -318,7 +334,7 @@ impl MainView {
         };
         let event = self.engine.events[i].clone();
         self.engine.mapping = true;
-        self.status = format!("Cartographie de {}…", event.name()).into();
+        self.status = self.tf(format!("Cartographie de {}…", event.name()), format!("Mapping {}…", event.name())).into();
         cx.notify();
         cx.spawn(async move |this, cx| {
             let res = cx.background_spawn(async move { engine::sweep(&lib, &data, &event, MAP_STEP) }).await;
@@ -326,12 +342,12 @@ impl MainView {
                 v.engine.mapping = false;
                 match res {
                     Ok(map) => {
-                        v.status = format!("{} sons utilisés par cette voiture", map.len()).into();
+                        v.status = v.tf(format!("{} sons utilisés par cette voiture", map.len()), format!("{} sounds used by this car", map.len())).into();
                         v.engine.map = Some((i, map));
                     }
                     Err(err) => {
                         log::error!("cartographie : {err}");
-                        v.status = format!("Cartographie : {err}").into();
+                        v.status = v.tf(format!("Cartographie : {err}"), format!("Mapping: {err}")).into();
                     }
                 }
                 cx.notify();
@@ -347,9 +363,9 @@ impl MainView {
         let body = if let Some(err) = &e.error {
             message(err.clone()).into_any_element()
         } else if self.project.is_none() {
-            message("Ouvrez d'abord fmod_assets_all.bundle.".into()).into_any_element()
+            message(self.t("Ouvrez d'abord fmod_assets_all.bundle.", "Open fmod_assets_all.bundle first.").into()).into_any_element()
         } else if e.loading_events {
-            message("Lecture des évènements moteur avec FMOD…".into()).into_any_element()
+            message(self.t("Lecture des évènements moteur avec FMOD…", "Reading engine events with FMOD…").into()).into_any_element()
         } else {
             div()
                 .flex()
@@ -371,7 +387,7 @@ impl MainView {
             .h_full()
             .border_r_1()
             .border_color(theme::border())
-            .child(div().px_4().py_2().child(section_title(format!("VOITURES ({})", e.events.len()))))
+            .child(div().px_4().py_2().child(section_title(self.tf(format!("VOITURES ({})", e.events.len()), format!("CARS ({})", e.events.len())))))
             .child(
                 uniform_list(
                     "engine-events",
@@ -414,7 +430,7 @@ impl MainView {
             return div()
                 .flex_1()
                 .p_6()
-                .child(div().text_sm().text_color(theme::text_dim()).child("Choisissez une voiture à gauche."))
+                .child(div().text_sm().text_color(theme::text_dim()).child(self.t("Choisissez une voiture à gauche.", "Pick a car on the left.")))
                 .into_any_element();
         };
         let p = self.project.as_ref();
@@ -441,7 +457,11 @@ impl MainView {
                     .flex()
                     .gap_2()
                     .child(
-                        ghost_button("use-mod", if e.use_mod { "✔ MES SONS" } else { "SONS D'ORIGINE" })
+                        ghost_button("map", if e.mapping { self.t("ANALYSE…", "ANALYSING…") } else { self.t("CARTOGRAPHIER", "MAP SOUNDS") })
+                            .on_click(cx.listener(|v, _, _, cx| v.build_map(cx))),
+                    )
+                    .child(
+                        ghost_button("use-mod", if e.use_mod { self.t("✔ MES SONS", "✔ MY SOUNDS") } else { self.t("SONS D'ORIGINE", "ORIGINAL SOUNDS") })
                             .when(e.use_mod, |b| b.border_color(theme::ok()).text_color(theme::ok()))
                             .on_click(cx.listener(|v, _, _, cx| {
                                 v.engine.use_mod = !v.engine.use_mod;
@@ -458,9 +478,9 @@ impl MainView {
                             if e.starting {
                                 "…"
                             } else if running {
-                                "■ ARRÊTER"
+                                self.t("■ ARRÊTER", "■ STOP")
                             } else {
-                                "▶ DÉMARRER"
+                                self.t("▶ DÉMARRER", "▶ START")
                             },
                         )
                         .on_click(cx.listener(|v, _, _, cx| v.toggle_sim(cx))),
@@ -483,19 +503,19 @@ impl MainView {
                             .text_color(if limiting { theme::warn() } else { theme::text() })
                             .child(format!("{:.0}", e.rpm)),
                     )
-                    .child(div().pb_1().text_sm().text_color(theme::text_dim()).child("tr/min"))
-                    .when(limiting, |d| d.child(div().pb_1().ml_2().child(badge("RUPTEUR", theme::warn())))),
+                    .child(div().pb_1().text_sm().text_color(theme::text_dim()).child(self.t("tr/min", "rpm")))
+                    .when(limiting, |d| d.child(div().pb_1().ml_2().child(badge(self.t("RUPTEUR", "LIMITER"), theme::warn())))),
             )
-            .child(slider("rpm-track", e.rpm / max, Some(e.limiter / max), e.rpm_track.clone(), Slider::Rpm, cx))
+            .child(slider("rpm-track", e.rpm / max, e.limiter_enabled.then_some(e.limiter / max), e.rpm_track.clone(), Slider::Rpm, cx))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_4()
-                    .child(div().w(px(110.)).text_sm().text_color(theme::text_dim()).child(format!("Charge {:.0} %", e.load * 100.)))
+                    .child(div().w(px(110.)).text_sm().text_color(theme::text_dim()).child(self.tf(format!("Charge {:.0} %", e.load * 100.), format!("Load {:.0} %", e.load * 100.))))
                     .child(div().flex_1().child(slider("load-track", e.load, None, e.load_track.clone(), Slider::Load, cx))),
             )
-            .child(
+            .when(e.limiter_enabled, |d| d.child(
                 div()
                     .flex()
                     .items_center()
@@ -505,7 +525,7 @@ impl MainView {
                             .w(px(110.))
                             .text_sm()
                             .text_color(theme::text_dim())
-                            .child(format!("Rupteur {:.0}", e.limiter)),
+                            .child(self.tf(format!("Rupteur {:.0}", e.limiter), format!("Limiter {:.0}", e.limiter))),
                     )
                     .child(div().flex_1().child(slider(
                         "limiter-track",
@@ -515,7 +535,7 @@ impl MainView {
                         Slider::Limiter,
                         cx,
                     ))),
-            )
+            ))
             .child(
                 div()
                     .id("throttle")
@@ -530,7 +550,11 @@ impl MainView {
                     .font_weight(FontWeight::BOLD)
                     .text_sm()
                     .cursor_pointer()
-                    .child(if running { "MAINTENIR POUR ACCÉLÉRER" } else { "DÉMARREZ LE MOTEUR POUR ACCÉLÉRER" })
+                    .child(if running {
+                        self.t("MAINTENIR POUR ACCÉLÉRER", "HOLD TO ACCELERATE")
+                    } else {
+                        self.t("DÉMARREZ LE MOTEUR POUR ACCÉLÉRER", "START THE ENGINE TO ACCELERATE")
+                    })
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|v, _: &MouseDownEvent, _, cx| {
@@ -541,16 +565,19 @@ impl MainView {
                     ),
             );
 
+        // Hauteur réservée pour 3 couches : la carte en dessous ne bouge pas quand
+        // une boucle apparaît ou disparaît.
         let layers = div()
             .flex()
             .flex_col()
             .gap_1()
-            .child(section_title("SONS ENTENDUS"))
+            .min_h(px(130.))
+            .child(section_title(self.t("SONS ENTENDUS", "ACTIVE SOUNDS")))
             .when(e.layers.is_empty(), |d| {
                 d.child(div().text_sm().text_color(theme::text_dim()).child(if running {
-                    "Aucun son audible à ce régime."
+                    self.t("Aucun son audible à ce régime.", "No audible sound at this RPM.")
                 } else {
-                    "Démarrez le moteur pour voir le mélange en direct."
+                    self.t("Démarrez le moteur pour voir le mélange en direct.", "Start the engine to see the live mix.")
                 }))
             })
             .children(e.layers.iter().enumerate().map(|(i, l)| self.render_layer(i, l, cx)));
@@ -559,17 +586,7 @@ impl MainView {
             .flex()
             .flex_col()
             .gap_1()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(section_title("CARTE DES SONS SELON LE RÉGIME"))
-                    .child(
-                        ghost_button("map", if e.mapping { "ANALYSE…" } else { "CARTOGRAPHIER" })
-                            .on_click(cx.listener(|v, _, _, cx| v.build_map(cx))),
-                    ),
-            )
+            .child(section_title(self.t("CARTE DES SONS SELON LE RÉGIME", "SOUND MAP BY RPM")))
             .children(self.render_map(max, cx));
 
         div()
@@ -583,8 +600,9 @@ impl MainView {
             .gap_6()
             .child(header)
             .when(replaced > 0, |d| {
-                d.child(div().text_xs().text_color(theme::ok()).child(format!(
-                    "{replaced} son(s) remplacé(s) dans cette banque : activez « MES SONS » pour les entendre."
+                d.child(div().text_xs().text_color(theme::ok()).child(self.tf(
+                    format!("{replaced} son(s) remplacé(s) dans cette banque : activez « MES SONS » pour les entendre."),
+                    format!("{replaced} replaced sound(s) in this bank: enable « MY SOUNDS » to hear them."),
                 )))
             })
             .child(rpm_block)
@@ -594,7 +612,7 @@ impl MainView {
     }
 
     fn render_layer(&self, i: usize, l: &ActiveLayer, cx: &mut Context<Self>) -> impl IntoElement {
-        let name = self.sound_name(l.sound).unwrap_or_else(|| "son non identifié".into());
+        let name = self.sound_name(l.sound).unwrap_or_else(|| self.t("son non identifié", "unidentified sound").into());
         let selected = l.sound.is_some() && self.selected == l.sound;
         let sound = l.sound;
         div()
@@ -637,14 +655,17 @@ impl MainView {
             return vec![div()
                 .text_sm()
                 .text_color(theme::text_dim())
-                .child("Analysez toute la plage de régime pour savoir quels sons remplacer.")
+                .child(self.t("Analysez toute la plage de régime pour savoir quels sons remplacer.", "Sweep the whole RPM range to find which sounds to replace."))
                 .into_any_element()];
         };
         if Some(*ev) != e.selected {
             return Vec::new();
         }
         let mut out = Vec::new();
-        for (group, on_load) in [("ACCÉLÉRATION (Load = 1)", true), ("PIED LEVÉ (Load = 0)", false)] {
+        for (group, on_load) in [
+            (self.t("ACCÉLÉRATION (Load = 1)", "ON THROTTLE (Load = 1)"), true),
+            (self.t("PIED LEVÉ (Load = 0)", "OFF THROTTLE (Load = 0)"), false),
+        ] {
             out.push(div().mt_2().text_xs().text_color(theme::text_dim()).child(group).into_any_element());
             for (i, m) in map.iter().enumerate().filter(|(_, m)| m.on_load == on_load) {
                 let r = m.sound;

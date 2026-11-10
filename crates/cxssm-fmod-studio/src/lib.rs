@@ -12,7 +12,7 @@
 mod ffi;
 
 use std::ffi::{c_void, CStr, CString};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -35,17 +35,6 @@ fn check(call: &'static str, code: i32) -> Result<()> {
     } else {
         Err(Error::Fmod { call, code })
     }
-}
-
-/// Dossier `api/` du FMOD Engine, déduit de `CXSSM_FMOD_API` ou du chemin de `fsbank`
-/// (`…/bin/fsbank` → `…/api`).
-pub fn find_api_dir() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("CXSSM_FMOD_API").map(PathBuf::from) {
-        return Some(p);
-    }
-    let fsbank = PathBuf::from(std::env::var_os("CXSSM_FSBANKCL")?);
-    let api = fsbank.parent()?.parent()?.join("api");
-    api.is_dir().then_some(api)
 }
 
 /// Sortie audio du système FMOD.

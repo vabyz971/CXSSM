@@ -14,6 +14,8 @@ pub enum Error {
     FmodStudio(#[from] cxssm_fmod_studio::Error),
     #[error("encodeur : {0}")]
     Encoder(String),
+    #[error("mise à jour : {0}")]
+    Update(String),
     #[error("aucune banque FMOD trouvée dans ce bundle")]
     NoBank,
 }

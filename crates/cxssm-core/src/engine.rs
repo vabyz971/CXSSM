@@ -13,7 +13,7 @@ use cxssm_fmod_studio::{Bank, EventInfo, FmodLib, Instance, Output, System};
 use crate::error::{Error, Result};
 use crate::project::{ModProject, SoundCategory, SoundRef};
 
-pub use cxssm_fmod_studio::{find_api_dir, load_library, ParamInfo};
+pub use cxssm_fmod_studio::{load_library, ParamInfo};
 
 /// Bibliothèque FMOD chargée, partageable entre threads.
 pub type FmodLibHandle = Arc<FmodLib>;
