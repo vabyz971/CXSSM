@@ -26,6 +26,25 @@ pub const LOAD: &str = "Load";
 /// Volume en dessous duquel une couche est considérée comme inaudible.
 const AUDIBLE: f32 = 0.02;
 
+/// Son de la banque `bank` dont la longueur PCM est `length_pcm`, d'après la table
+/// `lengths` (une entrée par son du FSB). `None` si la longueur est absente ou ambiguë.
+fn identify_in(lengths: &[u64], bank: usize, length_pcm: u32) -> Option<SoundRef> {
+    let mut hits = lengths.iter().enumerate().filter(|(_, &l)| l == u64::from(length_pcm));
+    let (i, _) = hits.next()?;
+    hits.next().is_none().then_some(SoundRef { bank, sample: i })
+}
+
+/// Couches audibles, identifiées avec la table `lengths`, de la plus forte à la plus faible.
+fn to_active_in(lengths: &[u64], bank: usize, layers: Vec<cxssm_fmod_studio::Layer>) -> Vec<ActiveLayer> {
+    let mut v: Vec<ActiveLayer> = layers
+        .into_iter()
+        .filter(|l| l.volume > AUDIBLE)
+        .map(|l| ActiveLayer { sound: identify_in(lengths, bank, l.length_pcm), volume: l.volume, pitch: l.pitch })
+        .collect();
+    v.sort_by(|a, b| b.volume.total_cmp(&a.volume));
+    v
+}
+
 /// Évènement moteur d'une voiture.
 #[derive(Debug, Clone)]
 pub struct EngineEvent {
@@ -153,20 +172,14 @@ impl EngineData {
     /// Retrouve un son de la banque d'après sa longueur PCM (les noms sont supprimés
     /// dans les FSB du jeu). `None` si la longueur est ambiguë.
     pub fn identify(&self, bank: usize, length_pcm: u32) -> Option<SoundRef> {
-        let b = self.bank(bank).ok()?;
-        let mut hits = b.lengths.iter().enumerate().filter(|(_, &l)| l == u64::from(length_pcm));
-        let (i, _) = hits.next()?;
-        hits.next().is_none().then_some(SoundRef { bank, sample: i })
+        identify_in(&self.bank(bank).ok()?.lengths, bank, length_pcm)
     }
 
     fn to_active(&self, bank: usize, layers: Vec<cxssm_fmod_studio::Layer>) -> Vec<ActiveLayer> {
-        let mut v: Vec<ActiveLayer> = layers
-            .into_iter()
-            .filter(|l| l.volume > AUDIBLE)
-            .map(|l| ActiveLayer { sound: self.identify(bank, l.length_pcm), volume: l.volume, pitch: l.pitch })
-            .collect();
-        v.sort_by(|a, b| b.volume.total_cmp(&a.volume));
-        v
+        match self.bank(bank) {
+            Ok(b) => to_active_in(&b.lengths, bank, layers),
+            Err(_) => to_active_in(&[], bank, layers),
+        }
     }
 }
 
@@ -191,9 +204,11 @@ pub fn list_events(lib: &Arc<FmodLib>, data: &EngineData) -> Result<Vec<EngineEv
 /// Lecture en direct d'un évènement moteur sur la carte son.
 pub struct Simulator {
     system: System,
-    data: EngineData,
     instance: Option<Instance>,
     bank_index: usize,
+    /// Longueur PCM de chaque son de la banque **jouée** : celle du mod quand elle contient
+    /// des remplacements (leur durée diffère de l'original), sinon celle du jeu.
+    lengths: Vec<u64>,
     banks: Vec<Bank>,
     /// La banque jouée contient les sons de remplacement de l'utilisateur.
     pub modded: bool,
@@ -211,9 +226,13 @@ impl Simulator {
         let system = System::new(lib.clone(), Output::Speakers)?;
         data.load_base(&system)?;
         let modded = modded_bank.is_some();
-        let bytes = match modded_bank {
-            Some(b) => b,
-            None => &data.bank(event.bank)?.bytes,
+        let original = data.bank(event.bank)?;
+        let (bytes, lengths) = match modded_bank {
+            Some(b) => {
+                let fsb = cxssm_fmod::Bank::parse(b.to_vec())?.fsb()?;
+                (b, fsb.samples.iter().map(|s| s.num_samples).collect())
+            }
+            None => (original.bytes.as_slice(), original.lengths.clone()),
         };
         let bank = system.load_bank(bytes)?;
         system.load_sample_data(bank);
@@ -223,7 +242,7 @@ impl Simulator {
         system.set_param(&instance, LOAD, 0.);
         system.start(&instance);
         system.update();
-        Ok(Self { system, data: data.clone(), instance: Some(instance), bank_index: event.bank, banks: vec![bank], modded })
+        Ok(Self { system, instance: Some(instance), bank_index: event.bank, lengths, banks: vec![bank], modded })
     }
 
     pub fn set_param(&self, name: &str, value: f32) {
@@ -240,7 +259,7 @@ impl Simulator {
     pub fn layers(&self) -> Vec<ActiveLayer> {
         self.instance
             .as_ref()
-            .map(|i| self.data.to_active(self.bank_index, self.system.layers(i)))
+            .map(|i| to_active_in(&self.lengths, self.bank_index, self.system.layers(i)))
             .unwrap_or_default()
     }
 }

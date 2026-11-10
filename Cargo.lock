@@ -1480,7 +1480,7 @@ checksum = "e2931af7e13dc045d8e9d26afccc6fa115d64e115c9c84b1166288b46f6782c2"
 
 [[package]]
 name = "cxssm-app"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "cxssm-core",
  "env_logger",
@@ -1492,7 +1492,7 @@ dependencies = [
 
 [[package]]
 name = "cxssm-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -1503,7 +1503,7 @@ dependencies = [
 
 [[package]]
 name = "cxssm-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "cxssm-fmod",
  "cxssm-fmod-studio",
@@ -1527,7 +1527,7 @@ dependencies = [
 
 [[package]]
 name = "cxssm-fmod"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "lewton",
  "log",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "cxssm-fmod-studio"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "libloading 0.9.0",
  "log",
@@ -1546,7 +1546,7 @@ dependencies = [
 
 [[package]]
 name = "cxssm-unity"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "log",
  "lz4_flex",
