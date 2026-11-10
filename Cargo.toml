@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+default-members = ["crates/cxssm-unity", "crates/cxssm-fmod", "crates/cxssm-core", "crates/cxssm-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["vabyz971"]
+repository = "https://github.com/vabyz971/CXSSM"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# crates internes
+cxssm-unity = { path = "crates/cxssm-unity" }
+cxssm-fmod  = { path = "crates/cxssm-fmod" }
+cxssm-core  = { path = "crates/cxssm-core" }
+
+# erreurs / logs
+thiserror = "2"
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+
+# binaire / compression
+byteorder = "1"
+lz4_flex = "0.11"
+lzma-rs = "0.3"
+
+# audio
+hound = "3"                                   # lecture/écriture WAV
+lewton = "0.10"                               # décodage Vorbis (sons FMOD)
+phf = { version = "0.11", features = ["macros"] }
+rodio = { version = "0.20", default-features = false, features = ["vorbis", "wav"] }
+symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "vorbis", "wav", "pcm"] }
+
+# CLI / UI
+clap = { version = "4", features = ["derive", "env"] }
+gpui = "0.2.2"
+rfd = "0.15"                                  # boîtes de dialogue natives (ouvrir/enregistrer)
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

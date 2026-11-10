@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>CXSSM — maquette</title>
+<!-- Maquette statique de l'interface. Mêmes couleurs que crates/cxssm-app/src/theme.rs.
+     Ouvrir directement dans un navigateur. -->
+<style>
+  :root{
+    --bg:#0E0F12; --panel:#16181D; --hi:#1E2128; --border:#2A2E37;
+    --text:#F2F3F5; --dim:#8A909C; --accent:#FFC400; --ok:#2BD67B; --warn:#FF5A36;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:#000;font:14px/1.4 "Inter","Segoe UI",system-ui,sans-serif;color:var(--text);
+       display:flex;justify-content:center;padding:24px}
+  .app{width:1360px;height:820px;background:var(--bg);display:flex;flex-direction:column;
+       border:1px solid var(--border);overflow:hidden}
+  /* barre supérieure */
+  .top{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;
+       background:var(--panel);border-bottom:1px solid var(--border)}
+  .brand{display:flex;align-items:center;gap:12px}
+  .stripe{width:6px;height:28px;background:var(--accent);transform:skewX(-12deg)}
+  .logo{font-size:20px;font-weight:800;letter-spacing:.04em}
+  .sub{font-size:11px;color:var(--dim);letter-spacing:.18em}
+  .path{margin-left:24px;color:var(--dim);font-size:13px}
+  .btn{padding:8px 20px;font-weight:700;font-size:13px;letter-spacing:.06em;cursor:pointer;border:0;
+       clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%)}
+  .btn.primary{background:var(--accent);color:#111}
+  .btn.ghost{background:var(--hi);color:var(--text)}
+  .btn:hover{filter:brightness(1.1)}
+  .row-btns{display:flex;gap:8px}
+  /* zone principale */
+  .main{flex:1;display:flex;overflow:hidden}
+  .side{width:220px;background:var(--panel);border-right:1px solid var(--border);padding:16px 0}
+  .title{font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.16em;padding:0 16px 8px}
+  .cat{display:flex;justify-content:space-between;padding:8px 16px;color:var(--dim);
+       border-left:4px solid transparent;cursor:pointer}
+  .cat:hover{background:var(--hi)}
+  .cat.on{background:var(--hi);color:var(--text);border-color:var(--accent)}
+  .list{flex:1;display:flex;flex-direction:column;min-width:0}
+  .head,.item{display:grid;grid-template-columns:18px 1fr 180px 140px 80px;align-items:center;padding:0 16px}
+  .head{padding-top:8px;padding-bottom:8px;font-size:11px;color:var(--dim);letter-spacing:.12em;
+        border-bottom:1px solid var(--border)}
+  .item{height:36px;cursor:pointer}
+  .item:hover,.item.sel{background:var(--hi)}
+  .item.sel{box-shadow:inset 3px 0 var(--accent)}
+  .item span:not(:nth-child(2)){color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--border)}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)}
+  .search{margin:12px 16px;padding:8px 12px;background:var(--panel);border:1px solid var(--border);color:var(--dim)}
+  /* détails */
+  .detail{width:340px;background:var(--panel);border-left:1px solid var(--border);padding:20px;
+          display:flex;flex-direction:column;gap:16px}
+  .name{font-size:18px;font-weight:700}
+  .badge{display:inline-block;padding:1px 8px;border:1px solid currentColor;font-size:11px;letter-spacing:.1em}
+  .spec{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)}
+  .spec b{font-weight:400;color:var(--dim)}
+  .wave{height:56px;background:
+        repeating-linear-gradient(90deg,var(--accent) 0 2px,transparent 2px 5px);
+        -webkit-mask:linear-gradient(transparent 35%,#000 35% 65%,transparent 65%);opacity:.7}
+  .drop{border:1px dashed var(--border);padding:16px;text-align:center;color:var(--dim);font-size:13px}
+  .status{height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;
+          background:var(--panel);border-top:1px solid var(--border);font-size:12px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="stripe"></div>
+      <div><div class="logo">CXSSM</div><div class="sub">CARX STREET SOUND MOD</div></div>
+      <div class="path">D:\SteamLibrary\…\StreamingAssets\fmod_assets_all.bundle</div>
+    </div>
+    <div class="row-btns">
+      <button class="btn ghost">OUVRIR LE BUNDLE</button>
+      <button class="btn primary">EXPORTER LE MOD</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <nav class="side">
+      <div class="title">CATÉGORIES</div>
+      <div class="cat">Tous les sons <span>412</span></div>
+      <div class="cat on">Moteur <span>186</span></div>
+      <div class="cat">Turbo <span>24</span></div>
+      <div class="cat">Échappement <span>31</span></div>
+      <div class="cat">Musique <span>42</span></div>
+      <div class="cat">Voix <span>88</span></div>
+      <div class="cat">Interface <span>27</span></div>
+      <div class="cat">Autre <span>14</span></div>
+      <div class="title" style="margin-top:24px">BANQUES</div>
+      <div class="cat">Vehicles.bank</div>
+      <div class="cat">Music.bank</div>
+      <div class="cat">VO.bank</div>
+    </nav>
+
+    <section class="list">
+      <div class="search">🔍  Rechercher un son…</div>
+      <div class="head"><span></span><span>NOM</span><span>BANQUE</span><span>FORMAT</span><span>DURÉE</span></div>
+      <div class="item"><i class="dot ok"></i><span>i6_na_on_1000</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>1.84 s</span></div>
+      <div class="item sel"><i class="dot ok"></i><span>i6_na_on_3000</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>1.21 s</span></div>
+      <div class="item"><i class="dot warn"></i><span>i6_na_on_5000</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>0.96 s</span></div>
+      <div class="item"><i class="dot"></i><span>i6_na_off_1000</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>1.90 s</span></div>
+      <div class="item"><i class="dot"></i><span>i6_na_off_3000</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>1.30 s</span></div>
+      <div class="item"><i class="dot"></i><span>i6_na_limiter</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>0.42 s</span></div>
+      <div class="item"><i class="dot"></i><span>v8_on_2000</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>1.66 s</span></div>
+      <div class="item"><i class="dot"></i><span>v8_on_4000</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>1.12 s</span></div>
+      <div class="item"><i class="dot"></i><span>v8_idle</span><span>Vehicles.bank</span><span>48000 Hz · 1 can.</span><span>2.40 s</span></div>
+    </section>
+
+    <aside class="detail">
+      <div class="title" style="padding:0">SON SÉLECTIONNÉ</div>
+      <div>
+        <div class="name">i6_na_on_3000</div>
+        <span class="badge" style="color:var(--accent);margin-top:6px">MOTEUR · BOUCLE</span>
+      </div>
+      <div class="wave"></div>
+      <div>
+        <div class="title" style="padding:0 0 6px">CARACTÉRISTIQUES À RESPECTER</div>
+        <div class="spec"><b>Codec</b>Vorbis</div>
+        <div class="spec"><b>Fréquence</b>48000 Hz</div>
+        <div class="spec"><b>Canaux</b>1 (mono)</div>
+        <div class="spec"><b>Durée</b>1.21 s</div>
+        <div class="spec"><b>Boucle</b>0 → 58079</div>
+      </div>
+      <div>
+        <div class="title" style="padding:0 0 6px">REMPLACEMENT</div>
+        <span class="badge" style="color:var(--ok)">COMPATIBLE</span>
+        <div style="margin-top:6px">my_2jz_on_3000.wav</div>
+      </div>
+      <div class="drop">Glissez un fichier WAV / OGG / FLAC ici</div>
+      <div class="row-btns">
+        <button class="btn primary">REMPLACER…</button>
+        <button class="btn ghost">▶ ÉCOUTER</button>
+        <button class="btn ghost">RÉTABLIR</button>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="status">
+    <span>3 banques, 412 sons détectés</span>
+    <span>2 sons remplacés · fsbankcl : OK</span>
+  </footer>
+</div>
+</body>
+</html>

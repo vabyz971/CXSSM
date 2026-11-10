@@ -1,0 +1,15 @@
+[package]
+name = "cxssm-fmod"
+description = "Lecture / réécriture des banques FMOD Studio (.bank RIFF) et des FSB5"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+log.workspace = true
+lewton.workspace = true
+phf.workspace = true
+
+[lints]
+workspace = true

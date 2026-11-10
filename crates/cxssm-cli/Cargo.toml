@@ -1,0 +1,20 @@
+[package]
+name = "cxssm-cli"
+description = "CXSSM en ligne de commande (inspection, remplacement, export)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cxssm"
+path = "src/main.rs"
+
+[dependencies]
+cxssm-core.workspace = true
+cxssm-unity.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+env_logger.workspace = true
+
+[lints]
+workspace = true

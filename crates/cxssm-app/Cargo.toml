@@ -1,0 +1,21 @@
+[package]
+name = "cxssm-app"
+description = "CXSSM – interface graphique (GPUI)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cxssm-app"
+path = "src/main.rs"
+
+[dependencies]
+cxssm-core.workspace = true
+gpui.workspace = true
+rfd.workspace = true
+rodio.workspace = true
+env_logger.workspace = true
+log.workspace = true
+
+[lints]
+workspace = true

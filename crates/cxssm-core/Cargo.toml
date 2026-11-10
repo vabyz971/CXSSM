@@ -1,0 +1,20 @@
+[package]
+name = "cxssm-core"
+description = "Logique métier de CXSSM : projet de mod, remplacement de sons, export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cxssm-unity.workspace = true
+cxssm-fmod.workspace = true
+thiserror.workspace = true
+log.workspace = true
+hound.workspace = true
+symphonia.workspace = true
+
+[dev-dependencies]
+cxssm-fmod.workspace = true
+
+[lints]
+workspace = true
