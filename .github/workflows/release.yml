@@ -1,0 +1,110 @@
+name: Release
+
+# Publie les exécutables quand un tag `v*` est poussé :
+#   git tag v0.1.0 && git push Github v0.1.0
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dépendances système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config cmake libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig1-dev \
+            libfreetype6-dev libasound2-dev libssl-dev libzstd-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p cxssm-app -p cxssm-cli
+      - name: Archive
+        run: |
+          NAME="cxssm-${GITHUB_REF_NAME}-linux-x86_64"
+          mkdir -p "dist/$NAME"
+          cp target/release/cxssm-app target/release/cxssm "dist/$NAME/"
+          cp README.md LICENSE THIRD_PARTY_LICENSES.md "dist/$NAME/"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.tar.gz
+
+  windows:
+    name: Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p cxssm-app -p cxssm-cli
+      - name: Archive
+        shell: pwsh
+        run: |
+          $name = "cxssm-$env:GITHUB_REF_NAME-windows-x86_64"
+          New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
+          Copy-Item target/release/cxssm-app.exe, target/release/cxssm.exe, README.md, LICENSE, THIRD_PARTY_LICENSES.md "dist/$name/"
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+
+  macos:
+    name: macOS (universel Intel + Apple Silicon)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p cxssm-app -p cxssm-cli --target aarch64-apple-darwin
+      - run: cargo build --release --locked -p cxssm-app -p cxssm-cli --target x86_64-apple-darwin
+      - name: Application CXSSM.app + archive
+        run: |
+          NAME="cxssm-${GITHUB_REF_NAME}-macos-universal"
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP="dist/$NAME/CXSSM.app"
+          mkdir -p "$APP/Contents/MacOS"
+          for bin in cxssm-app cxssm; do
+            lipo -create -output "dist/$bin" \
+              "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
+          done
+          mv dist/cxssm-app "$APP/Contents/MacOS/cxssm-app"
+          mv dist/cxssm "dist/$NAME/cxssm"
+          sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          # Signature ad hoc (nécessaire pour lancer un binaire Apple Silicon non notarisé).
+          codesign --force --deep --sign - "$APP"
+          codesign --force --sign - "dist/$NAME/cxssm"
+          cp README.md LICENSE THIRD_PARTY_LICENSES.md "dist/$NAME/"
+          ditto -c -k --keepParent "dist/$NAME" "dist/$NAME.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.zip
+
+  release:
+    name: Publication GitHub
+    needs: [linux, windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

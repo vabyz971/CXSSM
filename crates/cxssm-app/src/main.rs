@@ -1,5 +1,8 @@
 //! CXSSM – CarX Street Sound Mod : interface graphique GPUI.
 
+// Windows : application graphique, sans fenêtre de console.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod player;
 mod theme;
 mod view;

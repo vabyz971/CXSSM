@@ -1,183 +1,261 @@
 # CXSSM — CarX Street Sound Mod
 
-Éditeur de sons pour **CarX Street** (PC), écrit en Rust avec l'interface [GPUI](https://gpui.rs).
+Sound editor for **CarX Street** (PC), written in Rust with the [GPUI](https://gpui.rs) UI framework.
 
-CXSSM ouvre le fichier `fmod_assets_all.bundle` du jeu, détecte les banques **FMOD** qu'il
-contient (régime moteur, turbo, échappement, musiques, voix, interface…) et permet de
-remplacer chaque son par un fichier audio de mêmes caractéristiques. Il écrit ensuite un nouveau
-`fmod_assets_all.bundle` **dans un autre dossier**, prêt à être publié sur le Steam Workshop.
-Le fichier d'origine n'est jamais modifié.
+CXSSM opens the game's `fmod_assets_all.bundle`, finds the **FMOD** banks it contains
+(engine RPM loops, turbo, exhaust, music, voices, UI…) and lets you replace each sound with an
+audio file that has the same characteristics. It then writes a new `fmod_assets_all.bundle`
+**to a separate folder**, ready to be published on the Steam Workshop.
+The original file is never modified.
 
-> ⚠ Projet en cours de développement. La lecture et la réécriture ont été validées sur le
-> vrai `fmod_assets_all.bundle` (62 banques, environ 3 000 sons, réécriture identique à l'octet près),
-> mais un son remplacé n'a pas encore été testé **en jeu**. Voir [docs/RECHERCHE_FMOD.md](docs/RECHERCHE_FMOD.md).
+> ⚠ Work in progress. Reading and rewriting have been validated on the real
+> `fmod_assets_all.bundle` (62 banks, ~3,000 sounds, byte-identical rewrite), but a replaced
+> sound has not been tested **in game** yet. See [docs/RECHERCHE_FMOD.md](docs/RECHERCHE_FMOD.md)
+> (research notes, in French).
 
 ---
 
-## Fonctionnement
+## How it works
 
 ```
 fmod_assets_all.bundle (UnityFS)
  └─ SerializedFile "CAB-…"
-     └─ TextAsset  "Vehicles.bank" …       ← une banque FMOD Studio par TextAsset
+     └─ TextAsset  "V8.bank" …            ← one FMOD Studio bank per TextAsset
          └─ RIFF "FEV " (.bank)
-             ├─ évènements / paramètres     ← conservés tels quels (RPM, charge, bus…)
-             └─ chunk "SND " → FSB5         ← les sons, remplacés un par un
+             ├─ events / parameters       ← kept untouched (RPM, load, buses…)
+             └─ "SND " chunk → FSB5        ← the sounds, replaced one by one
 ```
 
-1. **Ouvrir** : décompression du bundle (LZ4/LZMA), lecture des TextAssets, puis
-   analyse des banques et du FSB5 (nom, codec, fréquence, canaux, durée, boucle de chaque son).
-2. **Remplacer** : vous choisissez un WAV, OGG, FLAC ou MP3. CXSSM vérifie la fréquence et le
-   nombre de canaux par rapport à l'original (indicateur vert ou rouge).
-3. **Exporter** : ré-encodage dans le codec d'origine, reconstruction du FSB5, de la banque,
-   du SerializedFile puis du bundle, écrit dans `<dossier choisi>/fmod_assets_all.bundle`
-   avec un récapitulatif `cxssm-mod.txt`.
+1. **Open**: decompresses the bundle (LZ4/LZMA), reads the TextAssets, then parses the banks
+   and their FSB5 sound banks (codec, sample rate, channels, length and loop of every sound).
+2. **Replace**: pick a WAV, OGG, FLAC or MP3 file. CXSSM checks its sample rate and channel
+   count against the original (green or red indicator).
+3. **Export**: re-encodes to the original codec, rebuilds the FSB5, the bank, the
+   SerializedFile and the bundle, written to `<chosen folder>/fmod_assets_all.bundle`
+   together with a `cxssm-mod.txt` summary.
 
-## Simulateur moteur : savoir quels sons remplacer
+## Engine simulator: finding which sounds to replace
 
-Les noms des sons ont été supprimés des banques du jeu (`sample_0000`…). Pour savoir
-lesquels forment le son moteur d'une voiture, CXSSM rejoue les **évènements FMOD du
-jeu** avec l'API officielle FMOD Studio, exactement comme en jeu :
+Sound names are stripped from the game's banks (`sample_0000`…). To find out which sounds
+make up a car's engine, CXSSM replays the **game's own FMOD events** through the official
+FMOD Studio API, exactly as the game does:
 
-- chaque voiture a un évènement `event:/GameEvents/Engines/<voiture>` (130 au total,
-  dans les banques `V6`, `V8`, `V10`, `V12`, `I4`, `I6`, `Flat`, `Wankel`) ;
-- il est piloté par **`RPM`** (0 → 10 500) et **`Load`** (0 = pied levé, 1 = accélération),
-  plus selon la voiture `Turbo`, `Exhaust`, `CameraView`, `HP`… ;
-- FMOD superpose 1 à 3 boucles et règle leur volume et leur hauteur selon le régime.
+- every car has an event `event:/GameEvents/Engines/<car>` (130 in total, in the `V6`, `V8`,
+  `V10`, `V12`, `I4`, `I6`, `Flat` and `Wankel` banks);
+- it is driven by **`RPM`** (0 → 10,500) and **`Load`** (0 = off throttle, 1 = on throttle),
+  plus, depending on the car, `Turbo`, `Exhaust`, `CameraView`, `HP`…;
+- FMOD layers 1 to 3 loops and adjusts their volume and pitch according to RPM.
 
-Dans l'application, **Simulateur → Moteur (RPM)** :
-1. choisissez une voiture, puis **▶ DÉMARRER** ;
-2. bougez le curseur RPM / Charge, ou **maintenez « ACCÉLÉRER »** pour monter dans les tours ;
-3. **SONS ENTENDUS** affiche en direct les boucles jouées (volume, pitch) ; un clic sélectionne le son ;
-4. **CARTOGRAPHIER** balaye tout le régime et affiche, pour chaque boucle, sa plage de tr/min :
-   c'est la liste exacte des sons à remplacer ;
-5. après avoir remplacé des sons, activez **MES SONS** pour entendre votre mod avant de l'exporter.
+In the app, **Simulateur → Moteur (RPM)**:
+1. pick a car, then **▶ DÉMARRER** (start);
+2. move the RPM / load sliders, or **hold « ACCÉLÉRER »** (throttle) to rev up; the
+   adjustable **rev limiter** (« Rupteur ») makes the engine bounce at the chosen RPM;
+3. **SONS ENTENDUS** shows the loops being played in real time (volume, pitch); click one to
+   select it;
+4. **CARTOGRAPHIER** sweeps the whole RPM range and shows the RPM range of every loop:
+   this is the exact list of sounds to replace;
+5. once you have replaced sounds, enable **MES SONS** to hear your mod before exporting it.
 
-En ligne de commande :
+From the command line:
 ```sh
-cxssm engine-map <bundle>                      # liste des 130 évènements moteur
-cxssm engine-map <bundle> --event z28          # carte des sons de la z28
-cxssm extract-banks <bundle> --out banks/      # extrait les .bank (Master, V8…)
+cxssm engine-map <bundle>                      # list the 130 engine events
+cxssm engine-map <bundle> --event z28          # sound map of the z28
+cxssm extract-banks <bundle> --out banks/      # extract the raw .bank files (Master, V8…)
 ```
 
-Le simulateur utilise `libfmodstudio` du FMOD Engine (dossier `api/`), chargée au lancement :
-`CXSSM_FMOD_API=…/fmodstudioapi…/api`, ou déduite automatiquement de `CXSSM_FSBANKCL`.
+The simulator uses `libfmodstudio` from the FMOD Engine (`api/` folder), loaded at runtime:
+`CXSSM_FMOD_API=…/fmodstudioapi…/api`, or derived automatically from `CXSSM_FSBANKCL`.
 
-## Préparer un son de remplacement
+## Preparing a replacement sound
 
-| Règle | Détail |
+| Rule | Details |
 |---|---|
-| **Même fréquence** | ex. 48000 Hz si l'original est en 48000 Hz. Sinon la hauteur change. |
-| **Même nombre de canaux** | les sons moteur sont généralement en mono. |
-| **Durée proche** | surtout pour les **boucles moteur** : boucle parfaite, sans clic, sans fondu. |
-| **Même hauteur au même régime** | une boucle `*_on_3000` doit être enregistrée à environ 3000 tr/min. |
-| **WAV 16 bits** conseillé | c'est la source la plus fiable pour le ré-encodage. |
+| **Same sample rate** | e.g. 48,000 Hz if the original is 48,000 Hz, otherwise the pitch changes. |
+| **Same channel count** | engine sounds are usually mono. |
+| **Similar length** | especially for **engine loops**: seamless loop, no click, no fade. |
+| **Same pitch at the same RPM** | a loop used around 3,000 rpm must be recorded at ~3,000 rpm. |
+| **16-bit WAV** recommended | the most reliable source for re-encoding. |
 
-Les sons moteur vont par paires *on* (sous charge) et *off* (décélération) pour
-chaque plage de régime. Remplacez toujours une **série complète** (toutes les plages
-d'un même moteur), sinon le mélange entre vos sons et ceux d'origine s'entend.
+Engine loops come in *on load* (throttle) and *off load* (deceleration) sets, one per RPM
+range. Always replace a **complete set** (every range of the same engine; use the simulator
+map), otherwise the blend between your sounds and the original ones is audible.
 
-Pour préparer les fichiers avec [Audacity](https://www.audacityteam.org/) :
-« Projet → Fréquence », « Pistes → Convertir en mono », puis « Exporter en WAV 16 bits ».
+To prepare files with [Audacity](https://www.audacityteam.org/): set the project rate,
+mix down to mono if needed, then export as 16-bit WAV.
 
-## Prérequis
+## Installation
 
-- **Rust** 1.85+ (`rustup`)
-- **FMOD Engine** (gratuit, compte requis : <https://www.fmod.com/download>). Il fournit
-  l'encodeur officiel, indispensable car **tous les sons de CarX Street sont en Vorbis FMOD**
-  (ce n'est pas un Ogg standard). Indiquez son chemin :
-  ```sh
-  # Linux : le binaire s'appelle `fsbank` (dossier bin/ de l'archive fmodstudioapi…linux)
-  export CXSSM_FSBANKCL=~/Downloads/fmodstudioapi20400linux/bin/fsbank
-  # Windows : setx CXSSM_FSBANKCL "C:\Program Files (x86)\FMOD SoundSystem\FMOD Studio API Windows\bin\fsbankcl.exe"
-  ```
-  La variable doit être définie **dans le terminal qui lance l'application**.
-- Linux : bibliothèques de GPUI (Vulkan, Wayland/X11, xkbcommon, fontconfig).
-- **NixOS** : `shell.nix` fournit tout (Rust 1.95, cargo, clippy, rustfmt, rust-analyzer et les
-  bibliothèques). Aucune installation de rustup n'est nécessaire :
-  ```sh
-  nix-shell --run 'cargo run -p cxssm-app --release'
-  ```
+### Binaries (Windows, Linux, macOS)
 
-## Compiler et lancer
+Download the archive for your system from the
+[GitHub Releases](https://github.com/vabyz971/CXSSM/releases):
+
+| System | Archive | Contents |
+|---|---|---|
+| Windows 10/11 x64 | `cxssm-vX.Y.Z-windows-x86_64.zip` | `cxssm-app.exe` (GUI), `cxssm.exe` (CLI) |
+| Linux x86_64 | `cxssm-vX.Y.Z-linux-x86_64.tar.gz` | `cxssm-app`, `cxssm` |
+| macOS 11+ (Intel and Apple Silicon) | `cxssm-vX.Y.Z-macos-universal.zip` | `CXSSM.app`, `cxssm` |
+
+> **macOS**: the app is not notarized by Apple. On first launch, right-click → **Open**, or
+> remove the quarantine flag: `xattr -dr com.apple.quarantine CXSSM.app`
+
+FMOD is **not** included in these archives (see [FMOD licensing](#fmod-licensing)):
+install the FMOD Engine separately.
+
+### NixOS / Nix (flake)
 
 ```sh
-cargo run -p cxssm-app --release [-- <bundle>]   # interface graphique (ouvre directement le bundle si fourni)
-cargo run -p cxssm-cli -- list  <chemin>/fmod_assets_all.bundle
-cargo run -p cxssm-cli -- bundle <chemin>/fmod_assets_all.bundle
-cargo run -p cxssm-cli -- replace <bundle> --bank V8 --sound sample_0003 --file mon_son.wav --out output/
-cargo test                                # tests des crates (le crate GPUI est exclu par défaut)
-CXSSM_TEST_BUNDLE=<bundle> cargo test -p cxssm-core -- --ignored   # tests sur le vrai fichier du jeu
+nix run github:vabyz971/CXSSM                 # run the GUI
+nix run github:vabyz971/CXSSM#cli -- --help   # command-line tool
+nix profile install github:vabyz971/CXSSM     # install cxssm-app and cxssm
 ```
 
-## Publier sur le Steam Workshop
+In a NixOS flake configuration:
+```nix
+inputs.cxssm.url = "github:vabyz971/CXSSM";
+# …
+environment.systemPackages = [ inputs.cxssm.packages.${pkgs.system}.default ];
+```
 
-CarX Street prend en charge le Workshop officiellement depuis la version **1.14.0**.
+The Nix package ships the libraries CXSSM needs (Vulkan, Wayland/X11, audio) as well as those
+required by the FMOD `fsbank` tool (glib, zlib, libstdc++). Development shell: `nix develop`.
 
-1. Exportez votre mod avec CXSSM dans un dossier dédié, par exemple `MonModMoteur/`.
-2. Ouvrez **CarX Street Workshop Uploader** (Bibliothèque Steam → Outils).
-3. Créez un nouvel élément et sélectionnez le dossier. Le bundle doit garder le nom
-   `fmod_assets_all.bundle` et la même arborescence relative que dans le jeu
-   (⚠ arborescence exacte à confirmer avec l'uploader).
-4. Ajoutez une description. Le contenu de `cxssm-mod.txt` liste les sons modifiés.
-5. Dans le jeu, allez dans **Paramètres → Mods**, puis abonnez-vous au mod et activez-le.
-   Si deux mods modifient le même fichier, c'est celui qui a la priorité la plus haute qui s'applique.
+### Publishing a release (maintainers)
 
-> Ne remplacez pas le bundle directement dans le dossier du jeu : des fichiers modifiés de cette
-> façon peuvent bloquer la connexion en ligne. Passez par le Workshop.
+```sh
+git tag v0.1.0 && git push Github main v0.1.0
+```
+The `.github/workflows/release.yml` workflow builds on Linux, Windows and macOS and attaches
+the archives to a GitHub Release.
 
-## Architecture du projet
+## Requirements
+
+- **FMOD Engine** (free download, account required: <https://www.fmod.com/download>). It provides:
+  - the official encoder (`fsbank` / `fsbankcl`), required because **every CarX Street sound
+    is FMOD Vorbis** (not standard Ogg);
+  - `libfmodstudio`, used by the engine simulator.
+
+  Point CXSSM to the encoder **in the terminal that launches the app**:
+  ```sh
+  # Linux: the binary is called `fsbank` (bin/ folder of the fmodstudioapi…linux archive)
+  export CXSSM_FSBANKCL=~/Downloads/fmodstudioapi20400linux/bin/fsbank
+  # Windows
+  setx CXSSM_FSBANKCL "C:\Program Files (x86)\FMOD SoundSystem\FMOD Studio API Windows\bin\fsbankcl.exe"
+  ```
+- To build from source: **Rust** 1.85+ (`rustup`). On Linux, GPUI needs the Vulkan,
+  Wayland/X11, xkbcommon and fontconfig development packages.
+- **NixOS**: `nix develop` (flake) or `nix-shell` (`shell.nix`) provides everything (Rust,
+  cargo, clippy, rustfmt, rust-analyzer and the libraries); no rustup needed.
+
+### Linux display note
+
+GPUI 0.2.2 on Wayland only redraws on compositor frame callbacks; with some compositors
+(e.g. niri) the window can stay frozen after background work until it is resized. CXSSM
+therefore runs through **XWayland** when it is available. Set `CXSSM_WAYLAND=1` to force Wayland.
+
+## Build and run
+
+```sh
+cargo run -p cxssm-app --release [-- <bundle>]   # GUI (opens the bundle directly if given)
+cargo run -p cxssm-cli -- list   <path>/fmod_assets_all.bundle
+cargo run -p cxssm-cli -- bundle <path>/fmod_assets_all.bundle
+cargo run -p cxssm-cli -- replace <bundle> --bank V8 --sound sample_0003 --file my_sound.wav --out output/
+cargo test                                     # unit tests (the GPUI crate is excluded by default)
+CXSSM_TEST_BUNDLE=<bundle> cargo test -p cxssm-core -- --ignored   # tests on the real game file
+```
+
+## Publishing on the Steam Workshop
+
+CarX Street has officially supported the Workshop since version **1.14.0**.
+
+1. Export your mod with CXSSM to a dedicated folder, e.g. `MyEngineMod/`.
+2. Open **CarX Street Workshop Uploader** (Steam Library → Tools).
+3. Create a new item and select the folder. The bundle must keep the name
+   `fmod_assets_all.bundle` and the same relative path as in the game
+   (⚠ exact layout still to be confirmed with the uploader).
+4. Add a description; `cxssm-mod.txt` lists the modified sounds.
+5. In game, go to **Settings → Mods**, subscribe to the mod and enable it. When two mods
+   change the same file, the one with the highest priority wins.
+
+> Do not overwrite the bundle in the game folder: files modified that way can prevent you
+> from connecting online. Use the Workshop.
+
+## Project layout
 
 ```
 CXSSM/
-├── Cargo.toml              workspace : dépendances et lints communs
-├── shell.nix               environnement de dev NixOS
+├── Cargo.toml              workspace: shared dependencies and lints
+├── flake.nix               Nix package (cxssm-app + cxssm), `nix run`, `nix develop`
+├── shell.nix               NixOS dev shell (without flakes)
+├── .github/workflows/      CI (clippy + tests) and Release (Windows, Linux, macOS)
+├── packaging/macos/        Info.plist for CXSSM.app
 ├── crates/
-│   ├── cxssm-unity/        UnityFS (lecture LZ4/LZMA, écriture LZ4), SerializedFile, TextAsset
-│   ├── cxssm-fmod/         banque RIFF/FEV, FSB5 (lecture, réécriture identique), décodeur FMOD Vorbis
-│   ├── cxssm-fmod-studio/  liaison (chargée à l'exécution) vers l'API FMOD Studio — seul crate `unsafe`
-│   ├── cxssm-core/         logique métier : ModProject, catégories, vérification audio, encodeur, export
-│   ├── cxssm-cli/          binaire `cxssm` (tests sur le vrai fichier, scripts)
-│   └── cxssm-app/          binaire GPUI : theme.rs, widgets.rs, view.rs
+│   ├── cxssm-unity/        UnityFS (LZ4/LZMA read, LZ4 write), SerializedFile, TextAsset
+│   ├── cxssm-fmod/         RIFF/FEV bank, FSB5 (read, byte-identical rewrite), FMOD Vorbis decoder
+│   ├── cxssm-fmod-studio/  runtime-loaded binding to the FMOD Studio API (the only `unsafe` crate)
+│   ├── cxssm-core/         domain logic: ModProject, categories, audio checks, encoder, export, engine simulator
+│   ├── cxssm-cli/          `cxssm` binary (scripts, tests on the real file)
+│   └── cxssm-app/          GPUI binary: theme.rs, widgets.rs, view.rs, view/engine_panel.rs
 └── docs/
-    ├── RECHERCHE_FMOD.md   formats, contraintes, risques, plan de validation
-    └── mockup/index.html   maquette de l'interface (ouvrir dans un navigateur)
+    ├── RECHERCHE_FMOD.md   formats, constraints, risks, validation plan (French)
+    └── mockup/index.html   UI mockup (open in a browser)
 ```
 
-Principes :
-- **Couches séparées** : les formats binaires (`unity`, `fmod`) ne connaissent ni l'UI ni l'audio,
-  et `core` ne connaît pas GPUI. La CLI et l'application partagent la même logique.
-- Erreurs typées avec `thiserror` dans les bibliothèques, `anyhow` dans les binaires.
-- `unsafe_code = "forbid"` et clippy activé sur tout le workspace.
-- Les tâches lourdes (ouverture, export) s'exécutent sur l'exécuteur d'arrière-plan de GPUI,
-  pour ne pas bloquer l'interface.
+Principles:
+- **Layered crates**: the binary formats (`unity`, `fmod`) know nothing about the UI or audio
+  output, and `core` knows nothing about GPUI. The CLI and the app share the same logic.
+- Typed errors with `thiserror` in libraries, `anyhow` in binaries.
+- `unsafe_code = "forbid"` and clippy on the whole workspace, except `cxssm-fmod-studio` (FFI).
+- Heavy work (opening, export, FMOD analysis) runs on GPUI's background executor so the UI
+  never blocks.
 
-## Feuille de route
+The user interface is currently in French; translation contributions are welcome.
 
-- [x] Lecture et écriture UnityFS, SerializedFile, TextAsset
-- [x] Analyse des banques FMOD et du FSB5, réécriture du FSB5
-- [x] Encodage PCM16 natif, Vorbis/FADPCM via `fsbankcl`
-- [x] Interface GPUI : catégories, liste, détails, remplacement, export
-- [x] Validation de la lecture et de la réécriture sur le vrai `fmod_assets_all.bundle`
-- [x] Simulateur moteur (API FMOD Studio) : RPM/charge en direct, sons entendus, carte des sons
-- [ ] **Test en jeu d'un son remplacé**
-- [x] Écoute des sons d'origine et enregistrement en WAV (décodage FMOD Vorbis natif)
-- [ ] Recherche, glisser-déposer, liste des banques dans la barre latérale
-- [ ] Rééchantillonnage et conversion mono/stéréo automatiques
-- [ ] Réglage du chemin `fsbankcl` et de la qualité dans l'interface
-- [ ] Sauvegarde et réouverture d'un projet de mod (`.cxssm`)
-- [ ] Déchiffrement des banques chiffrées, si c'est le cas pour CarX Street
+## Roadmap
 
-## Avertissement
+- [x] UnityFS, SerializedFile and TextAsset read/write
+- [x] FMOD bank and FSB5 parsing, FSB5 rewrite
+- [x] Native PCM16 encoding, Vorbis/FADPCM through `fsbank`
+- [x] GPUI interface: categories, list, details, replacement, export
+- [x] Read/rewrite validated on the real `fmod_assets_all.bundle`
+- [x] Preview of the original sounds and WAV export (native FMOD Vorbis decoder)
+- [x] Engine simulator (FMOD Studio API): live RPM/load, active layers, sound map, rev limiter
+- [ ] **In-game test of a replaced sound**
+- [ ] Native FMOD Vorbis encoder (would remove the `fsbank` dependency)
+- [ ] Search, drag & drop, bank list in the sidebar
+- [ ] Automatic resampling and mono/stereo conversion
+- [ ] `fsbank` path and quality settings in the UI
+- [ ] Save / reopen a mod project (`.cxssm`)
+- [ ] Credits / About screen (FMOD attribution)
 
-Projet de fans, sans lien avec CarX Technologies ni Firelight Technologies (FMOD).
-Ne distribuez que vos propres sons, ou des sons dont vous avez les droits.
+## FMOD licensing
 
-## Crédits
+CXSSM's own code is MIT-licensed, but **FMOD is proprietary software** owned by Firelight
+Technologies. CXSSM does not ship any FMOD file: it loads the FMOD Engine that each user
+downloads, accepting its licence. In short, according to the EULA shipped with FMOD 2.04
+(`doc/LICENSE.TXT`):
 
-La table des en-têtes Vorbis FMOD vient de [fsbex](https://github.com/astral4/fsbex)
-(MIT/Apache-2.0). Voir [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- the FMOD Engine may be used free of charge for personal (hobbyist) or non-commercial use,
+  with no monetisation, and with a credit line naming "FMOD" and "Firelight Technologies Pty Ltd.";
+- only the **run-time libraries** (`.dll`, `.so`…) may be redistributed, integrated into an
+  application, and FMOD must **not** be distributed "as part of a game engine or tool set";
+- other SDK files, including the `fsbank` tool, must **not** be redistributed.
 
-## Licence
+Bundling the FMOD libraries with CXSSM would therefore need written confirmation from Firelight
+Technologies (sales@fmod.com) that a free modding tool qualifies. Until then: **never commit
+FMOD binaries to this repository**, and let users install the FMOD Engine themselves.
 
-MIT — voir [LICENSE](LICENSE).
+## Disclaimer
+
+Fan project, not affiliated with CarX Technologies or Firelight Technologies (FMOD).
+Only distribute your own sounds, or sounds you have the rights to.
+
+## Credits
+
+- FMOD Vorbis setup-header table from [fsbex](https://github.com/astral4/fsbex)
+  (MIT/Apache-2.0). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- Audio engine: FMOD Studio by Firelight Technologies Pty Ltd. (installed separately by the user).
+
+## License
+
+MIT, see [LICENSE](LICENSE).

@@ -1,9 +1,9 @@
-# Licences tierces
+# Third-party licenses
 
-## fsbex — table des en-têtes Vorbis FMOD
+## fsbex: FMOD Vorbis setup-header table
 
-Le fichier `crates/cxssm-fmod/src/vorbis/lookup.rs` est repris sans modification de
-[fsbex](https://github.com/astral4/fsbex) 0.3.0, distribué sous licence **MIT OR Apache-2.0**.
+The file `crates/cxssm-fmod/src/vorbis/lookup.rs` is copied unmodified from
+[fsbex](https://github.com/astral4/fsbex) 0.3.0, distributed under **MIT OR Apache-2.0**.
 
     MIT License
     

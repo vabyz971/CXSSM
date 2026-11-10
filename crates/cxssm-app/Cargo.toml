@@ -17,5 +17,9 @@ rodio.workspace = true
 env_logger.workspace = true
 log.workspace = true
 
+# macOS : shaders Metal compilés au lancement (évite de dépendre de l'outil `metal` de Xcode).
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui = { workspace = true, features = ["runtime_shaders"] }
+
 [lints]
 workspace = true

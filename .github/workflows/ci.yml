@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Clippy + tests (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dépendances système (GPUI, audio)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config cmake libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig1-dev \
+            libfreetype6-dev libasound2-dev libssl-dev libzstd-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
