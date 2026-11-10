@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 cxssm-unity.workspace = true
 cxssm-fmod.workspace = true
+cxssm-fmod-studio.workspace = true
 thiserror.workspace = true
 log.workspace = true
 hound.workspace = true

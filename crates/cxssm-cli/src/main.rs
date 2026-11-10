@@ -18,6 +18,24 @@ struct Cli {
 enum Cmd {
     /// Affiche la structure brute du bundle (nœuds, tailles).
     Bundle { bundle: PathBuf },
+    /// Extrait toutes les banques FMOD (.bank brutes, y compris Master) dans un dossier.
+    ExtractBanks {
+        bundle: PathBuf,
+        #[arg(long, default_value = "output/banks")]
+        out: PathBuf,
+    },
+    /// Liste les évènements moteur (une voiture = un évènement) ou, avec `--event`,
+    /// la carte des sons utilisés selon le régime. Nécessite l'API FMOD Studio
+    /// (`CXSSM_FMOD_API`, ou déduite de `CXSSM_FSBANKCL`).
+    EngineMap {
+        bundle: PathBuf,
+        /// Nom de l'évènement (ex. `eng_V8_MGTC`).
+        #[arg(long)]
+        event: Option<String>,
+        /// Pas du balayage en tr/min.
+        #[arg(long, default_value_t = 250.)]
+        step: f32,
+    },
     /// Liste les banques FMOD et leurs sons.
     List { bundle: PathBuf },
     /// Remplace un son et exporte le bundle modifié.
@@ -51,6 +69,54 @@ fn main() -> Result<()> {
             println!("UnityFS v{} – Unity {} – {:?}", b.format_version, b.unity_revision, b.compression);
             for n in &b.nodes {
                 println!("  {:>12} o  {}", n.data.len(), n.path);
+            }
+        }
+        Cmd::ExtractBanks { bundle, out } => {
+            use cxssm_unity::{SerializedFile, TextAsset, CLASS_TEXT_ASSET};
+            let b = cxssm_unity::Bundle::open(&bundle).context("ouverture du bundle")?;
+            std::fs::create_dir_all(&out)?;
+            let mut n = 0;
+            for node in b.nodes.iter().filter(|n| !n.path.ends_with(".resS")) {
+                let Ok(sf) = SerializedFile::parse(node.data.clone()) else { continue };
+                for obj in sf.objects_of_class(CLASS_TEXT_ASSET) {
+                    let ta = TextAsset::parse(sf.object_data(obj), sf.endian)?;
+                    if ta.is_fmod_bank() {
+                        let name = if ta.name.ends_with(".bank") { ta.name.clone() } else { format!("{}.bank", ta.name) };
+                        std::fs::write(out.join(&name), &ta.script)?;
+                        n += 1;
+                    }
+                }
+            }
+            println!("{n} banque(s) écrite(s) dans {}", out.display());
+        }
+        Cmd::EngineMap { bundle, event, step } => {
+            use cxssm_core::engine;
+            let api = engine::find_api_dir().context("dossier api FMOD introuvable : définissez CXSSM_FMOD_API")?;
+            let lib = engine::load_library(&api)?;
+            let p = ModProject::open(&bundle)?;
+            let data = engine::EngineData::from_project(&p);
+            let events = engine::list_events(&lib, &data)?;
+            match event {
+                None => {
+                    for e in &events {
+                        let params: Vec<_> = e.info.params.iter().map(|x| x.name.as_str()).collect();
+                        println!("{:<8} {:<28} {}", p.banks[e.bank].name, e.name(), params.join(", "));
+                    }
+                    println!("{} évènements moteur", events.len());
+                }
+                Some(name) => {
+                    let Some(e) = events.iter().find(|e| e.name() == name) else { bail!("évènement « {name} » introuvable") };
+                    println!("{} ({})", e.info.path, p.banks[e.bank].name);
+                    for m in engine::sweep(&lib, &data, e, step)? {
+                        let s = &p.banks[m.sound.bank].fsb.samples[m.sound.sample];
+                        println!(
+                            "  {:<12} {:<11} {:>5.0} → {:>5.0} tr/min   pic {:>5.0} (vol {:.2})",
+                            s.name,
+                            if m.on_load { "accélération" } else { "pied levé" },
+                            m.rpm_min, m.rpm_max, m.rpm_peak, m.peak_volume
+                        );
+                    }
+                }
             }
         }
         Cmd::List { bundle } => {

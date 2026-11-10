@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-default-members = ["crates/cxssm-unity", "crates/cxssm-fmod", "crates/cxssm-core", "crates/cxssm-cli"]
+default-members = ["crates/cxssm-unity", "crates/cxssm-fmod", "crates/cxssm-fmod-studio", "crates/cxssm-core", "crates/cxssm-cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,6 +16,7 @@ rust-version = "1.85"
 cxssm-unity = { path = "crates/cxssm-unity" }
 cxssm-fmod  = { path = "crates/cxssm-fmod" }
 cxssm-core  = { path = "crates/cxssm-core" }
+cxssm-fmod-studio = { path = "crates/cxssm-fmod-studio" }
 
 # erreurs / logs
 thiserror = "2"

@@ -33,6 +33,36 @@ fmod_assets_all.bundle (UnityFS)
    du SerializedFile puis du bundle, écrit dans `<dossier choisi>/fmod_assets_all.bundle`
    avec un récapitulatif `cxssm-mod.txt`.
 
+## Simulateur moteur : savoir quels sons remplacer
+
+Les noms des sons ont été supprimés des banques du jeu (`sample_0000`…). Pour savoir
+lesquels forment le son moteur d'une voiture, CXSSM rejoue les **évènements FMOD du
+jeu** avec l'API officielle FMOD Studio, exactement comme en jeu :
+
+- chaque voiture a un évènement `event:/GameEvents/Engines/<voiture>` (130 au total,
+  dans les banques `V6`, `V8`, `V10`, `V12`, `I4`, `I6`, `Flat`, `Wankel`) ;
+- il est piloté par **`RPM`** (0 → 10 500) et **`Load`** (0 = pied levé, 1 = accélération),
+  plus selon la voiture `Turbo`, `Exhaust`, `CameraView`, `HP`… ;
+- FMOD superpose 1 à 3 boucles et règle leur volume et leur hauteur selon le régime.
+
+Dans l'application, **Simulateur → Moteur (RPM)** :
+1. choisissez une voiture, puis **▶ DÉMARRER** ;
+2. bougez le curseur RPM / Charge, ou **maintenez « ACCÉLÉRER »** pour monter dans les tours ;
+3. **SONS ENTENDUS** affiche en direct les boucles jouées (volume, pitch) ; un clic sélectionne le son ;
+4. **CARTOGRAPHIER** balaye tout le régime et affiche, pour chaque boucle, sa plage de tr/min :
+   c'est la liste exacte des sons à remplacer ;
+5. après avoir remplacé des sons, activez **MES SONS** pour entendre votre mod avant de l'exporter.
+
+En ligne de commande :
+```sh
+cxssm engine-map <bundle>                      # liste des 130 évènements moteur
+cxssm engine-map <bundle> --event z28          # carte des sons de la z28
+cxssm extract-banks <bundle> --out banks/      # extrait les .bank (Master, V8…)
+```
+
+Le simulateur utilise `libfmodstudio` du FMOD Engine (dossier `api/`), chargée au lancement :
+`CXSSM_FMOD_API=…/fmodstudioapi…/api`, ou déduite automatiquement de `CXSSM_FSBANKCL`.
+
 ## Préparer un son de remplacement
 
 | Règle | Détail |
@@ -104,7 +134,8 @@ CXSSM/
 ├── shell.nix               environnement de dev NixOS
 ├── crates/
 │   ├── cxssm-unity/        UnityFS (lecture LZ4/LZMA, écriture LZ4), SerializedFile, TextAsset
-│   ├── cxssm-fmod/         banque RIFF/FEV, FSB5 (lecture, réécriture, remplacement d'un échantillon)
+│   ├── cxssm-fmod/         banque RIFF/FEV, FSB5 (lecture, réécriture identique), décodeur FMOD Vorbis
+│   ├── cxssm-fmod-studio/  liaison (chargée à l'exécution) vers l'API FMOD Studio — seul crate `unsafe`
 │   ├── cxssm-core/         logique métier : ModProject, catégories, vérification audio, encodeur, export
 │   ├── cxssm-cli/          binaire `cxssm` (tests sur le vrai fichier, scripts)
 │   └── cxssm-app/          binaire GPUI : theme.rs, widgets.rs, view.rs
@@ -128,6 +159,7 @@ Principes :
 - [x] Encodage PCM16 natif, Vorbis/FADPCM via `fsbankcl`
 - [x] Interface GPUI : catégories, liste, détails, remplacement, export
 - [x] Validation de la lecture et de la réécriture sur le vrai `fmod_assets_all.bundle`
+- [x] Simulateur moteur (API FMOD Studio) : RPM/charge en direct, sons entendus, carte des sons
 - [ ] **Test en jeu d'un son remplacé**
 - [x] Écoute des sons d'origine et enregistrement en WAV (décodage FMOD Vorbis natif)
 - [ ] Recherche, glisser-déposer, liste des banques dans la barre latérale

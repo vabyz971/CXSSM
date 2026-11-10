@@ -9,6 +9,8 @@ use gpui::{
     MouseMoveEvent, Pixels, SharedString, UniformListScrollHandle, Window,
 };
 
+mod engine_panel;
+
 use crate::player::Player;
 use crate::theme;
 use crate::widgets::{badge, ghost_button, primary_button, section_title, spec_row};
@@ -52,6 +54,9 @@ pub struct MainView {
     scroll: UniformListScrollHandle,
     /// Glisser-déposer du curseur de la barre de défilement en cours.
     dragging_scrollbar: bool,
+    /// Vue « simulateur moteur » affichée à la place de la liste.
+    engine_mode: bool,
+    engine: engine_panel::EngineState,
     selected: Option<SoundRef>,
     status: SharedString,
     busy: bool,
@@ -72,6 +77,8 @@ impl MainView {
             filter: None,
             scroll: UniformListScrollHandle::new(),
             dragging_scrollbar: false,
+            engine_mode: false,
+            engine: engine_panel::EngineState::default(),
             selected: None,
             status: "Ouvrez fmod_assets_all.bundle pour commencer".into(),
             busy: false,
@@ -124,6 +131,8 @@ impl MainView {
                             format!("{} banques, {} sons trouvés", p.banks.len(), p.sounds().count()).into();
                         v.project = Some(p);
                         v.selected = None;
+                        v.engine.reset();
+                        v.engine_mode = false;
                         v.rebuild_rows();
                     }
                     Err(e) => {
@@ -419,7 +428,9 @@ impl MainView {
     }
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let in_list = !self.engine_mode;
         let item = |id: usize, label: &'static str, cat: Option<SoundCategory>, active: bool| {
+            let active = active && in_list;
             div()
                 .id(("cat", id))
                 .flex()
@@ -435,7 +446,10 @@ impl MainView {
                 .text_color(if active { theme::text() } else { theme::text_dim() })
                 .child(label)
                 .child(self.counts[id].to_string())
-                .on_click(cx.listener(move |v, _, _, cx| v.set_filter(cat, cx)))
+                .on_click(cx.listener(move |v, _, _, cx| {
+                    v.engine_mode = false;
+                    v.set_filter(cat, cx);
+                }))
         };
         let mut side = div()
             .flex()
@@ -452,7 +466,23 @@ impl MainView {
         for (i, c) in CATEGORIES.iter().enumerate() {
             side = side.child(item(i + 1, c.label(), Some(*c), self.filter == Some(*c)));
         }
-        side
+        let sim_active = self.engine_mode;
+        side.child(div().px_4().pt_6().pb_2().child(section_title("SIMULATEUR")))
+            .child(
+                div()
+                    .id("engine-mode")
+                    .px_4()
+                    .py_2()
+                    .text_sm()
+                    .cursor_pointer()
+                    .border_l_4()
+                    .border_color(if sim_active { theme::accent() } else { gpui::transparent_black().into() })
+                    .when(sim_active, |d| d.bg(theme::panel_hi()))
+                    .hover(|s| s.bg(theme::panel_hi()))
+                    .text_color(if sim_active { theme::text() } else { theme::text_dim() })
+                    .child("Moteur (RPM)")
+                    .on_click(cx.listener(|v, _, _, cx| v.enter_engine_mode(cx))),
+            )
     }
 
     /// Barre de défilement verticale : affichage du curseur + clic / glisser.
@@ -757,9 +787,12 @@ impl Render for MainView {
         // sans changement à l'écran la boucle s'arrête et le résultat d'une tâche de fond
         // (chargement, décodage, fin de lecture) ne s'afficherait qu'au prochain
         // redimensionnement. On garde donc la boucle active tant qu'une tâche est en cours.
-        if self.busy || self.decoding.is_some() || self.playing.is_some() {
+        if self.busy || self.decoding.is_some() || self.playing.is_some() || self.engine.is_active() {
             window.request_animation_frame();
         }
+        // Simulateur : accélérateur, paramètres FMOD et sons entendus, à chaque image.
+        self.engine.tick();
+        let dragging_slider = self.engine.dragging;
         div()
             .id("root")
             .flex()
@@ -775,13 +808,23 @@ impl Render for MainView {
                     }
                 }))
             })
+            .when_some(dragging_slider, |d, slider| {
+                d.on_mouse_move(cx.listener(move |v, e: &MouseMoveEvent, _, cx| {
+                    if e.pressed_button == Some(MouseButton::Left) {
+                        v.engine.set_from_mouse(slider, e.position.x);
+                    } else {
+                        v.engine.dragging = None;
+                    }
+                    cx.notify();
+                }))
+            })
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|v, _, _, cx| {
-                    if v.dragging_scrollbar {
-                        v.dragging_scrollbar = false;
-                        cx.notify();
-                    }
+                    v.dragging_scrollbar = false;
+                    v.engine.dragging = None;
+                    v.engine.throttle = false;
+                    cx.notify();
                 }),
             )
             .bg(theme::bg())
@@ -793,7 +836,13 @@ impl Render for MainView {
                     .flex_1()
                     .overflow_hidden()
                     .child(self.render_sidebar(cx))
-                    .child(self.render_list(cx))
+                    .map(|d| {
+                        if self.engine_mode {
+                            d.child(self.render_engine(cx).into_any_element())
+                        } else {
+                            d.child(self.render_list(cx).into_any_element())
+                        }
+                    })
                     .child(self.render_details(cx)),
             )
             .child(self.render_statusbar())

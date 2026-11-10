@@ -13,6 +13,8 @@ pkgs.mkShell rec {
     alsa-lib zstd
     # Requis par l'outil FMOD `bin/fsbank` (binaire précompilé pour distros classiques)
     stdenv.cc.cc.lib glib zlib
+    # Sortie audio de FMOD (simulateur moteur)
+    libpulseaudio
   ];
   # Bibliothèques chargées dynamiquement par GPUI (Vulkan, Wayland, X11…)
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;

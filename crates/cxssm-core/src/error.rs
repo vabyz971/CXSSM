@@ -10,6 +10,8 @@ pub enum Error {
     Fmod(#[from] cxssm_fmod::Error),
     #[error("audio : {0}")]
     Audio(String),
+    #[error("FMOD Studio : {0}")]
+    FmodStudio(#[from] cxssm_fmod_studio::Error),
     #[error("encodeur : {0}")]
     Encoder(String),
     #[error("aucune banque FMOD trouvée dans ce bundle")]

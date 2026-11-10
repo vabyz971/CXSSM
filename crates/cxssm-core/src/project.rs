@@ -24,7 +24,7 @@ impl SoundCategory {
     pub fn guess(bank: &str, sample: &str) -> Self {
         // Banques moteur de CarX Street : nommées d'après l'architecture (V8, I4, Flat…).
         let b = bank.to_lowercase();
-        const ENGINE_BANKS: [&str; 10] = ["v6", "v8", "v10", "v12", "i3", "i4", "i5", "i6", "flat", "rotary"];
+        const ENGINE_BANKS: [&str; 11] = ["v6", "v8", "v10", "v12", "i3", "i4", "i5", "i6", "flat", "rotary", "wankel"];
         if ENGINE_BANKS.contains(&b.as_str()) || b.starts_with("engine") {
             return Self::Engine;
         }
@@ -94,6 +94,9 @@ pub struct ModProject {
     pub source: PathBuf,
     pub bundle: Bundle,
     pub banks: Vec<BankEntry>,
+    /// Banques FMOD sans sons (ex. `Master Bank.strings` : noms des évènements).
+    /// Nécessaires pour rejouer les évènements avec l'API FMOD Studio.
+    pub aux_banks: Vec<(String, Vec<u8>)>,
     pub replacements: BTreeMap<SoundRef, PathBuf>,
     /// Résultat de la vérification de compatibilité, calculé une seule fois.
     statuses: BTreeMap<SoundRef, SoundStatus>,
@@ -104,6 +107,7 @@ impl ModProject {
         let source = path.as_ref().to_path_buf();
         let bundle = Bundle::open(&source)?;
         let mut banks = Vec::new();
+        let mut aux_banks = Vec::new();
 
         for node in &bundle.nodes {
             if node.path.ends_with(".resS") || node.path.ends_with(".resource") {
@@ -127,10 +131,11 @@ impl ModProject {
                     Ok(b) => b,
                     Err(e) => {
                         log::info!(
-                            "banque {} ignorée ({e}) – chunks : {:?}",
+                            "banque {} sans sons ({e}) – chunks : {:?}",
                             ta.name,
                             riff_chunks(&ta.script)
                         );
+                        aux_banks.push((ta.name.clone(), ta.script.clone()));
                         continue;
                     }
                 };
@@ -150,7 +155,7 @@ impl ModProject {
             return Err(Error::NoBank);
         }
         log::info!("{} banque(s) FMOD détectée(s)", banks.len());
-        Ok(Self { source, bundle, banks, replacements: BTreeMap::new(), statuses: BTreeMap::new() })
+        Ok(Self { source, bundle, banks, aux_banks, replacements: BTreeMap::new(), statuses: BTreeMap::new() })
     }
 
     pub fn sounds(&self) -> impl Iterator<Item = (SoundRef, &BankEntry, &Sample)> {
