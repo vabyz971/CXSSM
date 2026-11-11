@@ -17,6 +17,7 @@ pub mod error;
 pub mod export;
 pub mod fmod_install;
 pub mod game;
+pub mod generator;
 pub mod preview;
 pub mod project;
 pub mod settings;

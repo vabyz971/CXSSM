@@ -93,6 +93,8 @@ fmod_fns! {
     ch_sound: "FMOD_Channel_GetCurrentSound" => fn(Ptr, *mut Ptr),
     ch_audibility: "FMOD_Channel_GetAudibility" => fn(Ptr, *mut f32),
     ch_pitch: "FMOD_Channel_GetPitch" => fn(Ptr, *mut f32),
+    ch_position: "FMOD_Channel_GetPosition" => fn(Ptr, *mut u32, u32),
+    cg_pitch: "FMOD_ChannelGroup_GetPitch" => fn(Ptr, *mut f32),
     sound_length: "FMOD_Sound_GetLength" => fn(Ptr, *mut u32, u32),
 }
 
@@ -266,20 +268,24 @@ impl FmodLib {
         // SAFETY: instance valide ; le groupe n'existe qu'une fois l'évènement démarré.
         unsafe {
             if (self.ei_group)(inst, &mut group) == 0 && !group.is_null() {
-                self.walk(group, &mut out, 0);
+                self.walk(group, &mut out, 0, 1.);
             }
         }
         out
     }
 
     /// Parcourt récursivement les canaux d'un groupe (les instruments FMOD sont des sous-groupes).
-    unsafe fn walk(&self, group: Ptr, out: &mut Vec<Layer>, depth: u32) {
+    /// `parent_pitch` : produit des hauteurs des groupes parents (automations d'instrument).
+    unsafe fn walk(&self, group: Ptr, out: &mut Vec<Layer>, depth: u32, parent_pitch: f32) {
         if depth > 16 {
             return;
         }
         let mut n = 0;
         // SAFETY: groupe valide, indices bornés par les compteurs FMOD.
         unsafe {
+            let mut gp = 1f32;
+            (self.cg_pitch)(group, &mut gp);
+            let group_pitch = parent_pitch * gp;
             (self.cg_num_channels)(group, &mut n);
             for i in 0..n {
                 let mut ch = null_mut();
@@ -287,18 +293,19 @@ impl FmodLib {
                 if (self.cg_channel)(group, i, &mut ch) != 0 || (self.ch_sound)(ch, &mut snd) != 0 || snd.is_null() {
                     continue;
                 }
-                let (mut len, mut vol, mut pitch) = (0u32, 0f32, 1f32);
+                let (mut len, mut vol, mut pitch, mut pos) = (0u32, 0f32, 1f32, 0u32);
                 (self.sound_length)(snd, &mut len, TIMEUNIT_PCM);
                 (self.ch_audibility)(ch, &mut vol);
                 (self.ch_pitch)(ch, &mut pitch);
-                out.push(Layer { length_pcm: len, volume: vol, pitch });
+                (self.ch_position)(ch, &mut pos, TIMEUNIT_PCM);
+                out.push(Layer { length_pcm: len, volume: vol, pitch: pitch * group_pitch, position_pcm: pos });
             }
             let mut g = 0;
             (self.cg_num_groups)(group, &mut g);
             for i in 0..g {
                 let mut sub = null_mut();
                 if (self.cg_group)(group, i, &mut sub) == 0 && !sub.is_null() {
-                    self.walk(sub, out, depth + 1);
+                    self.walk(sub, out, depth + 1, group_pitch);
                 }
             }
         }

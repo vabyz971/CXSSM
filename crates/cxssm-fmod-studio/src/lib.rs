@@ -80,8 +80,10 @@ pub struct Layer {
     pub length_pcm: u32,
     /// Volume effectif (audibilité FMOD, toutes atténuations comprises).
     pub volume: f32,
-    /// Hauteur relative (1.0 = vitesse d'origine).
+    /// Hauteur relative (1.0 = vitesse d'origine), groupes parents compris.
     pub pitch: f32,
+    /// Tête de lecture dans le son, en échantillons PCM.
+    pub position_pcm: u32,
 }
 
 /// Un système FMOD Studio (avec ses banques chargées).
