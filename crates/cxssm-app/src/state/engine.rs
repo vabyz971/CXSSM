@@ -421,6 +421,13 @@ impl AppState {
     }
 
     /// Sons originaux ou sons remplacés : redémarre le moteur avec l'autre banque.
+    /// Le simulateur joue le mod : il redémarre pour entendre une modification.
+    pub(super) fn refresh_modded_engine(&mut self, cx: &mut Context<Self>) {
+        if self.engine.use_mod && self.engine.sim.take().is_some() {
+            self.start_engine(cx);
+        }
+    }
+
     pub fn set_use_mod(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.engine.use_mod == on {
             return;

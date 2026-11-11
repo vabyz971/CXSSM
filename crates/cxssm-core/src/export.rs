@@ -2,7 +2,7 @@
 //!
 //! Le bundle d'origine n'est **jamais** modifié : la sortie est écrite dans
 //! `<sortie>/fmod_assets_all.bundle`, accompagnée d'un `cxssm-mod.txt` listant
-//! les sons remplacés (utile pour la description Steam Workshop).
+//! les sons remplacés (utile pour décrire le mod).
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

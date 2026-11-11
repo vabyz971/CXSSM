@@ -16,6 +16,8 @@ pub enum Error {
     Encoder(String),
     #[error("mise à jour : {0}")]
     Update(String),
+    #[error("projet : {0}")]
+    Project(String),
     #[error("aucune banque FMOD trouvée dans ce bundle")]
     NoBank,
 }

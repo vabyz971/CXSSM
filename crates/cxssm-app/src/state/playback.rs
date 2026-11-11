@@ -101,7 +101,9 @@ impl AppState {
             return;
         }
         let Some(path) = self.project.as_ref().and_then(|p| p.replacements.get(&r).cloned()) else { return };
-        let res = self.player_mut().and_then(|p| p.play_file(&path));
+        // Les sons de l'éditeur sont des boucles : on les écoute en boucle.
+        let looped = self.editor.edits.contains_key(&r);
+        let res = self.player_mut().and_then(|p| if looped { p.play_file_looped(&path) } else { p.play_file(&path) });
         self.after_play(res, Playing::Replacement(r), cx);
     }
 
@@ -155,6 +157,8 @@ impl AppState {
         let default_name = format!("{}_{}", bank.name, sample.name);
         let (codec, sample) = (bank.fsb.codec, sample.clone());
         let title = self.t("Enregistrer le son d'origine", "Save the original sound");
+        // Projet : proposé dans `audio/exported/`.
+        let dir = self.exported_dir();
         cx.spawn(async move |this, cx| {
             let decoded = match cx.background_spawn(async move { preview::decode(codec, &sample) }).await {
                 Ok(d) => d,
@@ -163,9 +167,11 @@ impl AppState {
                     return;
                 }
             };
-            let Some(file) =
-                rfd::AsyncFileDialog::new().set_title(title).set_file_name(format!("{default_name}.{}", decoded.extension)).save_file().await
-            else {
+            let mut dialog = rfd::AsyncFileDialog::new().set_title(title).set_file_name(format!("{default_name}.{}", decoded.extension));
+            if let Some(d) = dir {
+                dialog = dialog.set_directory(d);
+            }
+            let Some(file) = dialog.save_file().await else {
                 return;
             };
             let res = std::fs::write(file.path(), &decoded.bytes);

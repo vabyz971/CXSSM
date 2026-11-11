@@ -7,7 +7,7 @@ use gpui::{div, prelude::*, px, Context, Entity, FontWeight, SharedString, Windo
 
 use super::sound_list::{bank_strip, rpm_strip};
 use crate::assets::{icon, Icon};
-use crate::state::{AppState, Leaf, Playing, SideTab};
+use crate::state::{AppState, Leaf, SideTab};
 use crate::theme;
 use crate::widgets::{button, disabled, fmt_int, ghost, on, primary, strip};
 
@@ -148,95 +148,6 @@ impl SidePanel {
             })))
     }
 
-    fn edit_tab(&self, s: &AppState, r: SoundRef) -> gpui::Div {
-        let Some(p) = &s.project else { return div() };
-        let Some((bank, smp)) = p.sample(r) else { return div() };
-        let status = p.status(r);
-        let replaced = !matches!(status, SoundStatus::Original);
-        let playing_new = s.playback.playing == Some(Playing::Replacement(r));
-        let lang = s.lang();
-        let spec = |k: &'static str, v: String| {
-            div()
-                .flex()
-                .justify_between()
-                .gap(theme::GAP_MD)
-                .child(div().text_color(theme::TEXT_DIM).child(k))
-                .child(div().font_family(theme::FONT_MONO).child(v))
-        };
-        let looping = smp.loop_range.map_or(s.t("non", "no").to_string(), |(a, b)| format!("{a} → {b}"));
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(20.))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(s.t("Remplacement", "Replacement")))
-                    .child(
-                        div()
-                            .p(theme::GAP_MD)
-                            .rounded(theme::RADIUS)
-                            .bg(theme::INSET)
-                            .border_1()
-                            .border_color(if matches!(status, SoundStatus::Mismatch(..)) { theme::DANGER } else { theme::BORDER_HOVER })
-                            .text_color(theme::TEXT_ICON)
-                            .child(status_text(s, r))
-                            .when_some(
-                                match &status {
-                                    SoundStatus::Mismatch(_, why) => Some(why.clone()),
-                                    _ => None,
-                                },
-                                |d, why| d.child(div().mt(px(6.)).text_size(theme::TEXT_SM).text_color(theme::DANGER).child(why)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .gap(theme::GAP_SM)
-                            .child(
-                                primary("replace")
-                                    .flex_1()
-                                    .h(theme::BUTTON_H)
-                                    .child(s.t("Choisir un fichier…", "Choose a file…"))
-                                    .on_click(on(&self.state, move |s, cx| s.pick_replacement(r, cx))),
-                            )
-                            .child(
-                                disabled(button("restore").h(theme::BUTTON_H), !replaced)
-                                    .child(s.t("Restaurer", "Restore"))
-                                    .when(replaced, |b| b.on_click(on(&self.state, move |s, cx| s.restore_original(r, cx)))),
-                            ),
-                    )
-                    .when(replaced, |d| {
-                        d.child(
-                            button("play-new")
-                                .h(theme::BUTTON_H)
-                                .child(icon(if playing_new { Icon::Stop } else { Icon::Play }, px(12.), theme::TEXT))
-                                .child(if playing_new { s.t("Arrêter", "Stop") } else { s.t("Écouter le remplacement", "Play the replacement") })
-                                .on_click(on(&self.state, move |s, cx| s.toggle_replacement(r, cx))),
-                        )
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(s.t("Caractéristiques à respecter", "Required format")))
-                    .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child(s.t(
-                        "Le son de remplacement est encodé par FMOD avec ces réglages.",
-                        "The replacement sound is encoded by FMOD with these settings.",
-                    )))
-                    .child(spec("Codec", bank.fsb.codec.to_string()))
-                    .child(spec(s.t("Fréquence", "Sample rate"), format!("{} Hz", fmt_int(smp.frequency as f32, lang))))
-                    .child(spec(s.t("Canaux", "Channels"), smp.channels.to_string()))
-                    .child(spec(s.t("Durée", "Length"), format!("{:.2} s", smp.duration_secs())))
-                    .child(spec(s.t("Boucle", "Loop"), looping)),
-            )
-    }
-
     fn io_tab(&self, s: &AppState, r: SoundRef) -> gpui::Div {
         let replaced = s.replaced_count();
         let wide = |b: gpui::Stateful<gpui::Div>| b.w_full().h(px(40.)).justify_start().px(px(14.));
@@ -282,14 +193,18 @@ impl SidePanel {
                         primary("export-mod")
                             .w_full()
                             .h(px(40.))
-                            .child(s.t("Exporter le mod complet", "Export the full mod"))
+                            .child(if s.workspace.is_some() {
+                                s.t("Construire le mod (dossier du projet)", "Build the mod (project folder)")
+                            } else {
+                                s.t("Exporter le mod complet", "Export the full mod")
+                            })
                             .on_click(on(&self.state, |s, cx| s.export_mod(cx))),
                     ),
             )
     }
 }
 
-fn status_text(s: &AppState, r: SoundRef) -> String {
+pub(super) fn status_text(s: &AppState, r: SoundRef) -> String {
     let file = |f: &std::path::Path| f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     match s.project.as_ref().map(|p| p.status(r)) {
         Some(SoundStatus::Replaced(f)) => s.tf(format!("Remplacé par {}", file(&f)), format!("Replaced by {}", file(&f))),
@@ -326,7 +241,7 @@ impl Render for SidePanel {
                     )
                     .child(match s.side_tab {
                         SideTab::Info => self.info_tab(s, r),
-                        SideTab::Edit => self.edit_tab(s, r),
+                        SideTab::Edit => super::track_editor::render(s, &self.state, r),
                         SideTab::Io => self.io_tab(s, r),
                     })
             }

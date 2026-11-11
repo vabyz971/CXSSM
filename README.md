@@ -4,14 +4,12 @@ Sound editor for **CarX Street** (PC), written in Rust with the [GPUI](https://g
 
 CXSSM opens the game's `fmod_assets_all.bundle`, finds the **FMOD** banks it contains
 (engine RPM loops, turbo, exhaust, music, voices, UI…) and lets you replace each sound with an
-audio file that has the same characteristics. It then writes a new `fmod_assets_all.bundle`
-**to a separate folder**, ready to be published on the Steam Workshop.
-The original file is never modified.
+audio file that has the same characteristics. Your work lives in a **`.cxssm` project folder**
+(a copy of the original bundle, your audio files and the rebuilt bundle), and CXSSM installs
+the mod into the game with one click — and puts the original file back just as easily.
 
-> ⚠ Work in progress. Reading and rewriting have been validated on the real
-> `fmod_assets_all.bundle` (62 banks, ~3,000 sounds, byte-identical rewrite), but a replaced
-> sound has not been tested **in game** yet. See [docs/RECHERCHE_FMOD.md](docs/RECHERCHE_FMOD.md)
-> (research notes, in French).
+> Replaced sounds have been validated in game. Research notes (in French):
+> [docs/RECHERCHE_FMOD.md](docs/RECHERCHE_FMOD.md).
 
 ---
 
@@ -30,9 +28,43 @@ fmod_assets_all.bundle (UnityFS)
    and their FSB5 sound banks (codec, sample rate, channels, length and loop of every sound).
 2. **Replace**: pick a WAV, OGG, FLAC or MP3 file. CXSSM checks its sample rate and channel
    count against the original (green or red indicator).
-3. **Export**: re-encodes to the original codec, rebuilds the FSB5, the bank, the
-   SerializedFile and the bundle, written to `<chosen folder>/fmod_assets_all.bundle`
-   together with a `cxssm-mod.txt` summary.
+3. **Build**: re-encodes to the original codec, rebuilds the FSB5, the bank, the
+   SerializedFile and the bundle, written to the project's `mod/fmod_assets_all.bundle`
+   (or `<chosen folder>/` without a project) together with a `cxssm-mod.txt` summary.
+4. **Install**: copies the built bundle over the game's file; **Restore** puts the original back.
+
+## Projects (`.cxssm`)
+
+**New project** copies the game's original bundle into a new folder:
+
+```
+My mod/
+├─ My mod.cxssm                    project file (TOML): replaced sounds, edit settings, game file
+├─ original/fmod_assets_all.bundle copy of the game's original bundle
+├─ mod/fmod_assets_all.bundle      bundle built by CXSSM
+└─ audio/
+   ├─ imported/    files you imported (copied into the project)
+   ├─ edited/      tracks rendered by the track editor (volume, pitch, recordings)
+   ├─ exported/    original sounds you exported
+   └─ recordings/  car recordings (acceleration, deceleration)
+```
+
+- The project is saved automatically; the last one reopens on startup.
+- Sounds are matched by bank and sample name, so they survive a game update.
+- The **Project** window shows the state of the game file — *mod installed*, *original*,
+  *game updated*, *modified by something else* — and offers install, restore and
+  **Update the project's original** (after a game update; installing is blocked until then,
+  so a mod built on an old bundle is never installed on a new game version).
+- CXSSM refuses to use an already modified bundle as the original: it compares the file size
+  with the size declared in the game's Addressables catalog (`aa/catalog.json`).
+
+## Track editor (experimental)
+
+The **Edit** tab of a sound adjusts its volume (±12 dB) and pitch (±6 semitones). For engine
+sounds it can also rebuild the loops from two continuous recordings of the car (full
+acceleration and full deceleration): CXSSM tracks the RPM in the recording, picks the passage
+closest to each loop's natural RPM, corrects its pitch and cuts a seamless loop of whole
+engine cycles. **Generate all of the car's tracks** does it for every loop of the car.
 
 ## Engine simulator: finding which sounds to replace
 
@@ -155,7 +187,7 @@ required by the FMOD `fsbank` tool (glib, zlib, libstdc++). Development shell: `
 ### Publishing a release (maintainers)
 
 ```sh
-git tag v0.1.0 && git push Github main v0.1.0
+git tag v0.3.0 && git push Github main v0.3.0
 ```
 The `.github/workflows/release.yml` workflow builds on Linux, Windows and macOS and attaches
 the archives to a GitHub Release.
@@ -200,21 +232,19 @@ cargo test                                     # unit tests (the GPUI crate is e
 CXSSM_TEST_BUNDLE=<bundle> cargo test -p cxssm-core -- --ignored   # tests on the real game file
 ```
 
-## Publishing on the Steam Workshop
+## Why not the Steam Workshop?
 
-CarX Street has officially supported the Workshop since version **1.14.0**.
+CarX Street's Workshop mods cannot replace sounds. The game's Addressables catalog
+(`StreamingAssets/aa/catalog.json`) loads `fmod_assets_all.bundle` and its banks with Unity's
+standard provider; only the bundles assigned to `CarX.Street.Mods.AssetBundleProviderForMods`
+(cars, vinyls, UI…) look for Workshop overrides. A subscribed sound mod is downloaded into
+`<game>/Mods/` but never read, whatever its size.
 
-1. Export your mod with CXSSM to a dedicated folder, e.g. `MyEngineMod/`.
-2. Open **CarX Street Workshop Uploader** (Steam Library → Tools).
-3. Create a new item and select the folder. The bundle must keep the name
-   `fmod_assets_all.bundle` and the same relative path as in the game
-   (⚠ exact layout still to be confirmed with the uploader).
-4. Add a description; `cxssm-mod.txt` lists the modified sounds.
-5. In game, go to **Settings → Mods**, subscribe to the mod and enable it. When two mods
-   change the same file, the one with the highest priority wins.
-
-> Do not overwrite the bundle in the game folder: files modified that way can prevent you
-> from connecting online. Use the Workshop.
+CXSSM therefore installs the mod in place of the game file (**Install in the game**). Steam
+restores the original file on every game update or file verification: reinstall the mod
+afterwards (the Project window shows it). To share a mod, share the built
+`mod/fmod_assets_all.bundle` with instructions to copy it into
+`CarX Street_Data/StreamingAssets/aa/<platform>/` — or the `.cxssm` project folder.
 
 ## Project layout
 
@@ -229,7 +259,7 @@ CXSSM/
 │   ├── cxssm-unity/        UnityFS (LZ4/LZMA read, LZ4 write), SerializedFile, TextAsset
 │   ├── cxssm-fmod/         RIFF/FEV bank, FSB5 (read, byte-identical rewrite), FMOD Vorbis decoder
 │   ├── cxssm-fmod-studio/  runtime-loaded binding to the FMOD Studio API (the only `unsafe` crate)
-│   ├── cxssm-core/         domain logic: ModProject, categories, audio checks, encoder, export, engine simulator
+│   ├── cxssm-core/         domain logic: ModProject, .cxssm workspace, audio checks, encoder, export, engine simulator, loop generator
 │   ├── cxssm-cli/          `cxssm` binary (scripts, tests on the real file)
 │   └── cxssm-app/          GPUI binary (see below)
 └── docs/
@@ -245,13 +275,15 @@ main.rs            window, embedded fonts and icons
 theme.rs           colours, fonts, sizes and spacing (constants)
 assets.rs          SVG icons + Inter / JetBrains Mono (OFL, assets/fonts)
 widgets.rs         buttons, switch, segmented control, scrollbar, spectrum strip
-state/             shared GPUI model `AppState`: bundle, selection (car, sound),
-                   simulator (RPM, load, limiter), playback, preferences, updates
+state/             shared GPUI model `AppState`: bundle, project (.cxssm), selection,
+                   simulator (RPM, load, limiter), playback, track editor, preferences, updates
 ui/mod.rs          root view: lays out the components below
 ui/tree.rs         category tree (Engine ▸ V8/V6… ▸ cars) with search
 ui/rpm_simulator.rs  RPM readout, tach, load, limiter, throttle and sweep
 ui/sound_list.rs   sounds of the selection: spectrum + RPM range, live volume/pitch
 ui/side_panel.rs   collapsible panel: Info / Edit / Import-Export tabs
+ui/track_editor.rs Edit tab: source, recordings, volume / pitch sliders
+ui/project_dialog.rs  Project window: folder content, game state, install / restore
 ui/preferences.rs  modal dialog with section navigation
 ```
 
@@ -284,7 +316,8 @@ every text is written in both languages where it is used, e.g. `self.t("Ouvrir",
 - [x] FMOD Engine auto-detection and folder setting in the UI
 - [x] Update check and install from GitHub Releases
 - [ ] Encoding quality setting in the UI
-- [ ] Save / reopen a mod project (`.cxssm`)
+- [x] Save / reopen a mod project (`.cxssm`), install into / restore the game
+- [x] Track editor: volume, pitch, engine loops rebuilt from car recordings (experimental)
 - [ ] Credits / About screen (FMOD attribution)
 
 ## FMOD licensing

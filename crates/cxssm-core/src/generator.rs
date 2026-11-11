@@ -227,6 +227,9 @@ pub struct LoopSpec {
     pub seconds: f32,
     /// Niveau RMS visé (-1..1), celui du son d'origine.
     pub rms: f32,
+    /// Régime du passage de l'enregistrement à utiliser (par défaut `rpm`) : sa
+    /// hauteur est ramenée à `rpm`.
+    pub source_rpm: Option<f32>,
 }
 
 /// Boucle générée.
@@ -279,7 +282,8 @@ fn read_positions(rec: &Recording, track: &RpmTrack, spec: &LoopSpec, start: f64
 /// Extrait de `rec` une boucle au régime `spec.rpm` (voir le module). Aux extrémités
 /// de l'enregistrement, la boucle est raccourcie pour rester au plus près du régime visé.
 pub fn make_loop(rec: &Recording, track: &RpmTrack, spec: LoopSpec) -> Result<Generated> {
-    let frame = track.nearest(spec.rpm).ok_or_else(|| Error::Audio("régime introuvable dans l'enregistrement".into()))?;
+    let wanted = spec.source_rpm.unwrap_or(spec.rpm);
+    let frame = track.nearest(wanted).ok_or_else(|| Error::Audio("régime introuvable dans l'enregistrement".into()))?;
     let nearest = track.rpm[frame];
     if !(1. / MAX_SHIFT..=MAX_SHIFT).contains(&(spec.rpm / nearest)) {
         return Err(Error::Audio(format!(
@@ -309,7 +313,7 @@ pub fn make_loop(rec: &Recording, track: &RpmTrack, spec: LoopSpec) -> Result<Ge
             });
         let Some(pos) = found else { continue };
         let mid = track.at(pos[total / 2]);
-        let err = (spec.rpm / mid).ln().abs();
+        let err = (wanted / mid).ln().abs();
         if best.as_ref().is_none_or(|b| err < b.0 - 0.01) {
             best = Some((err, pos, len, fade));
         }
@@ -352,6 +356,43 @@ pub fn make_loop(rec: &Recording, track: &RpmTrack, spec: LoopSpec) -> Result<Ge
         pcm.extend(std::iter::repeat_n(v, ch));
     }
     Ok(Generated { pcm, rate: spec.rate, channels: spec.channels, source_rpm, source_time, shift })
+}
+
+/// Applique un gain (dB) et un changement de hauteur (rapport, par rééchantillonnage)
+/// à un fichier WAV, adapté à la fréquence et aux canaux de `target`.
+pub fn process_file(path: &Path, target: &Sample, gain_db: f32, pitch: f32) -> Result<Generated> {
+    let err = |e: hound::Error| Error::Audio(format!("{} : {e}", path.display()));
+    let mut r = hound::WavReader::open(path).map_err(err)?;
+    let spec = r.spec();
+    let ch_in = usize::from(spec.channels.max(1));
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => r.samples::<f32>().collect::<std::result::Result<_, _>>().map_err(err)?,
+        hound::SampleFormat::Int => {
+            let scale = 1. / (1u64 << (spec.bits_per_sample - 1)) as f32;
+            r.samples::<i32>().map(|s| s.map(|v| v as f32 * scale)).collect::<std::result::Result<_, _>>().map_err(err)?
+        }
+    };
+    let ch_out = usize::from(target.channels.max(1));
+    // Canaux séparés, adaptés au son cible (mono dupliqué ou canaux mixés).
+    let planes: Vec<Vec<f32>> = (0..ch_out)
+        .map(|c| {
+            samples
+                .chunks(ch_in)
+                .map(|f| if ch_in == ch_out { f[c] } else if ch_in == 1 { f[0] } else { f.iter().sum::<f32>() / ch_in as f32 })
+                .collect()
+        })
+        .collect();
+    let step = f64::from(spec.sample_rate) / f64::from(target.frequency) * f64::from(pitch.max(0.05));
+    let frames = (planes[0].len() as f64 / step).floor() as usize;
+    let gain = 10f32.powf(gain_db / 20.);
+    let mut pcm = Vec::with_capacity(frames * ch_out);
+    for i in 0..frames {
+        for plane in &planes {
+            let v = cubic(plane, i as f64 * step) * gain;
+            pcm.push((v * 32767.).round().clamp(-32768., 32767.) as i16);
+        }
+    }
+    Ok(Generated { pcm, rate: target.frequency, channels: target.channels, source_rpm: 0., source_time: 0., shift: pitch })
 }
 
 /// Niveau RMS (-1..1) d'un son du jeu, tous canaux confondus.
@@ -400,7 +441,7 @@ mod tests {
     fn loop_has_the_requested_pitch_and_level() {
         let rec = sweep(48_000, 8., 1500., 6500.);
         let tr = track_rpm(&rec, 3.).unwrap();
-        let spec = LoopSpec { rpm: 4000., rate: 48_000, channels: 2, seconds: 1., rms: 0.1 };
+        let spec = LoopSpec { rpm: 4000., rate: 48_000, channels: 2, seconds: 1., rms: 0.1, source_rpm: None };
         let g = make_loop(&rec, &tr, spec).unwrap();
         assert_eq!(g.channels, 2);
         let mono: Vec<f32> = g.pcm.chunks(2).map(|f| f32::from(f[0]) / 32768.).collect();
@@ -415,5 +456,37 @@ mod tests {
         // Raccord de boucle : pas de saut entre la fin et le début.
         let jump = (mono[mono.len() - 1] - mono[0]).abs();
         assert!(jump < 0.05, "saut {jump}");
+    }
+
+    #[test]
+    fn process_file_applies_gain_pitch_and_channels() {
+        let dir = std::env::temp_dir().join(format!("cxssm-gen-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("in.wav");
+        let spec = hound::WavSpec { channels: 1, sample_rate: 24_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        for i in 0..24_000 {
+            w.write_sample(((i as f32 * 0.05).sin() * 8000.) as i16).unwrap();
+        }
+        w.finalize().unwrap();
+        let target = Sample {
+            name: "test".into(),
+            frequency: 48_000,
+            channels: 2,
+            num_samples: 0,
+            loop_range: None,
+            vorbis_crc: None,
+            chunks: Vec::new(),
+            data: Vec::new(),
+            header_bits: None,
+        };
+        // +6 dB, une octave plus haut : deux fois plus court une fois rééchantillonné à 48 kHz.
+        let g = process_file(&path, &target, 6.02, 2.).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!((g.rate, g.channels), (48_000, 2));
+        assert!((g.pcm.len() as i64 / 2 - 24_000).abs() <= 2, "{} trames", g.pcm.len() / 2);
+        let peak = g.pcm.iter().map(|v| v.unsigned_abs()).max().unwrap();
+        assert!((15_000..=16_500).contains(&peak), "crête {peak}");
+        assert!(g.pcm.chunks(2).all(|f| f[0] == f[1]), "mono dupliqué");
     }
 }

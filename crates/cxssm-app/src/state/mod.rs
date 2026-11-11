@@ -8,13 +8,17 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
+use cxssm_core::workspace::{GameState, Workspace};
 use cxssm_core::{encoder::EncoderConfig, export, game, FmodInstall, Language, ModProject, Settings, SoundCategory, SoundRef};
 use gpui::{AppContext as _, point, px, Context, FocusHandle, ScrollHandle, SharedString, UniformListScrollHandle};
 
+pub mod editor;
 pub mod engine;
 pub mod playback;
 pub mod updates;
+pub mod workspace;
 
+pub use editor::{Editor, Phase, Slider, Source as EditSource};
 pub use engine::EngineState;
 pub use playback::{Playback, Playing};
 pub use updates::UpdateState;
@@ -74,6 +78,8 @@ pub enum Drag {
     Scroll(&'static str, ScrollHandle),
     Rpm,
     Load,
+    /// Curseur de l'éditeur de pistes.
+    Slider(Slider),
 }
 
 /// Index du bundle : sons par catégorie, puis par banque.
@@ -106,6 +112,12 @@ impl Catalog {
 pub struct AppState {
     pub settings: Settings,
     pub project: Option<ModProject>,
+    /// Projet `.cxssm` ouvert (dossier : original, mod, pistes) ; `None` = bundle seul.
+    pub workspace: Option<Workspace>,
+    /// État du fichier du jeu par rapport au projet (`None` : vérification en cours).
+    pub game_state: Option<GameState>,
+    /// Fenêtre « Projet » ouverte.
+    pub project_dialog: bool,
     pub catalog: Catalog,
     /// Incrémenté à chaque ouverture : les tâches de fond d'un ancien bundle sont ignorées.
     pub generation: u64,
@@ -128,6 +140,7 @@ pub struct AppState {
 
     pub engine: EngineState,
     pub playback: Playback,
+    pub editor: Editor,
 
     // ── préférences ──
     pub prefs_open: bool,
@@ -151,14 +164,18 @@ impl AppState {
             Some(f) => log::info!("FMOD Engine : {}", f.root.display()),
             None => log::warn!("FMOD Engine introuvable"),
         }
-        // Bundle passé en argument, sinon celui du jeu (choisi ou détecté automatiquement).
-        let initial = initial.or_else(|| settings.startup_bundle());
+        // Projet ou bundle passé en argument, sinon le dernier projet, sinon le bundle du
+        // jeu (choisi ou détecté automatiquement).
+        let initial = initial.or_else(|| settings.startup_path());
         let mut s = Self {
             status: tr(settings.language, "Ouvrez fmod_assets_all.bundle pour commencer", "Open fmod_assets_all.bundle to get started")
                 .into(),
             encoder: EncoderConfig { fsbankcl: fmod.as_ref().and_then(|f| f.fsbank.clone()), quality: 80 },
             settings,
             project: None,
+            workspace: None,
+            game_state: None,
+            project_dialog: false,
             catalog: Catalog::default(),
             generation: 0,
             busy: false,
@@ -175,6 +192,7 @@ impl AppState {
             drag: None,
             engine: EngineState::default(),
             playback: Playback::new(),
+            editor: Editor::default(),
             prefs_open: false,
             prefs_section: PrefSection::General,
             detected_bundles: Vec::new(),
@@ -250,10 +268,17 @@ impl AppState {
 
     // ───────────────────────────── ouverture / export ─────────────────────────────
 
+    /// Ouvre un projet `.cxssm` ou un bundle.
     pub fn open_file_dialog(&mut self, cx: &mut Context<Self>) {
-        let title = self.t("Ouvrir fmod_assets_all.bundle", "Open fmod_assets_all.bundle");
+        let title = self.t("Ouvrir un projet CXSSM ou fmod_assets_all.bundle", "Open a CXSSM project or fmod_assets_all.bundle");
         cx.spawn(async move |this, cx| {
-            let file = rfd::AsyncFileDialog::new().set_title(title).add_filter("AssetBundle Unity", &["bundle"]).pick_file().await;
+            let file = rfd::AsyncFileDialog::new()
+                .set_title(title)
+                .add_filter("CXSSM / AssetBundle", &["cxssm", "bundle"])
+                .add_filter("CXSSM", &["cxssm"])
+                .add_filter("AssetBundle Unity", &["bundle"])
+                .pick_file()
+                .await;
             let _ = this.update(cx, |s, cx| match file {
                 Some(f) => s.open_path(f.path().to_path_buf(), cx),
                 None => s.set_status("Ouverture annulée".into(), "Opening cancelled".into(), cx),
@@ -262,7 +287,21 @@ impl AppState {
         .detach();
     }
 
+    /// Ouvre un projet (`.cxssm` ou son dossier) ou un bundle seul.
     pub fn open_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let is_project = path.is_dir() || path.extension().is_some_and(|e| e == cxssm_core::workspace::EXTENSION);
+        if is_project {
+            self.open_project(path, cx);
+        } else {
+            if self.settings.last_project.take().is_some() {
+                self.save_settings();
+            }
+            self.open_bundle(path, None, cx);
+        }
+    }
+
+    /// Charge un bundle ; avec `ws`, c'est l'original du projet et ses sons sont appliqués.
+    pub(super) fn open_bundle(&mut self, path: PathBuf, ws: Option<Workspace>, cx: &mut Context<Self>) {
         log::info!("ouverture de {}", path.display());
         self.busy = true;
         self.set_status(format!("Analyse de {}…", path.display()), format!("Reading {}…", path.display()), cx);
@@ -280,7 +319,12 @@ impl AppState {
                         s.leaf = None;
                         s.sound = None;
                         s.playback.reset_spectra();
+                        s.editor.edits.clear();
+                        s.editor.takes = Default::default();
                         s.engine.reset();
+                        s.workspace = ws;
+                        s.game_state = None;
+                        s.apply_workspace(cx);
                         s.init_engine(cx);
                     }
                     Err(e) => {
@@ -299,7 +343,12 @@ impl AppState {
             self.set_status("Aucun son remplacé : rien à exporter".into(), "No replaced sound: nothing to export".into(), cx);
             return;
         }
-        let title = self.t("Dossier de sortie du mod (Steam Workshop)", "Mod output folder (Steam Workshop)");
+        // Projet : le mod est construit dans son dossier `mod/`.
+        if self.workspace.is_some() {
+            self.build_mod(false, cx);
+            return;
+        }
+        let title = self.t("Dossier de sortie du mod", "Mod output folder");
         cx.spawn(async move |this, cx| {
             let Some(dir) = rfd::AsyncFileDialog::new().set_title(title).pick_folder().await else { return };
             // Le projet est emprunté le temps de l'export puis rendu.
@@ -370,9 +419,7 @@ impl AppState {
                 return;
             };
             let _ = this.update(cx, |s, cx| {
-                if let Some(p) = s.project.as_mut() {
-                    p.set_replacement(r, file.path().to_path_buf());
-                }
+                s.on_file_replacement(r, file.path().to_path_buf(), cx);
                 cx.notify();
             });
         })
@@ -380,8 +427,11 @@ impl AppState {
     }
 
     pub fn restore_original(&mut self, r: SoundRef, cx: &mut Context<Self>) {
+        self.forget_edit(r);
         if let Some(p) = self.project.as_mut() {
             p.clear_replacement(r);
+            self.refresh_modded_engine(cx);
+            self.project_changed(true);
             cx.notify();
         }
     }
@@ -456,6 +506,7 @@ impl AppState {
             Some(Drag::Scroll(_, h)) => Self::scroll_to_mouse(&h, pos.y),
             Some(Drag::Rpm) => self.engine.set_rpm_from_mouse(pos.x),
             Some(Drag::Load) => self.engine.set_load_from_mouse(pos.x),
+            Some(Drag::Slider(sl)) => self.slide(sl, pos.x),
             None => return,
         }
         cx.notify();
@@ -463,6 +514,10 @@ impl AppState {
 
     /// Bouton de la souris relâché n'importe où dans la fenêtre.
     pub fn mouse_released(&mut self, cx: &mut Context<Self>) {
+        // Fin du réglage d'un curseur : le son est rendu avec la nouvelle valeur.
+        if let (Some(Drag::Slider(_)), Some(r)) = (&self.drag, self.sound) {
+            self.render_edit(r, cx);
+        }
         self.drag = None;
         self.engine.throttle = false;
         cx.notify();
@@ -616,6 +671,6 @@ impl AppState {
 
     /// Une tâche de fond ou une animation demande de redessiner à chaque image.
     pub fn is_animating(&self) -> bool {
-        self.busy || self.playback.is_active() || self.engine.is_active()
+        self.busy || self.playback.is_active() || self.engine.is_active() || self.editor_busy()
     }
 }

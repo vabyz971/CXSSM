@@ -294,6 +294,7 @@ fn main() -> Result<()> {
                     channels: s.channels,
                     seconds: (s.duration_secs() as f32).clamp(1., 2.5),
                     rms: gen::sample_rms(bank.fsb.codec, s)?,
+                    source_rpm: None,
                 };
                 // Enregistrement de la même phase en priorité, l'autre s'il ne couvre pas ce régime.
                 let order = if m.on_load || recs.len() < 2 { [0, 1] } else { [1, 0] };

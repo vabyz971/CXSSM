@@ -31,6 +31,14 @@ impl Player {
         self.play(source)
     }
 
+    /// Joue un fichier en boucle jusqu'à l'arrêt (boucles moteur générées).
+    pub fn play_file_looped(&mut self, path: &Path) -> Result<(), String> {
+        use rodio::Source as _;
+        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        let source = Decoder::new(std::io::BufReader::new(file)).map_err(|e| e.to_string())?;
+        self.play(source.buffered().repeat_infinite())
+    }
+
     fn play<S>(&mut self, source: S) -> Result<(), String>
     where
         S: rodio::Source + Send + 'static,
