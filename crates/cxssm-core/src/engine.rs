@@ -39,7 +39,12 @@ fn to_active_in(lengths: &[u64], bank: usize, layers: Vec<cxssm_fmod_studio::Lay
     let mut v: Vec<ActiveLayer> = layers
         .into_iter()
         .filter(|l| l.volume > AUDIBLE)
-        .map(|l| ActiveLayer { sound: identify_in(lengths, bank, l.length_pcm), volume: l.volume, pitch: l.pitch })
+        .map(|l| ActiveLayer {
+            sound: identify_in(lengths, bank, l.length_pcm),
+            volume: l.volume,
+            pitch: l.pitch,
+            position_pcm: l.position_pcm,
+        })
         .collect();
     v.sort_by(|a, b| b.volume.total_cmp(&a.volume));
     v
@@ -70,6 +75,8 @@ pub struct ActiveLayer {
     pub sound: Option<SoundRef>,
     pub volume: f32,
     pub pitch: f32,
+    /// Tête de lecture dans le son (échantillons PCM).
+    pub position_pcm: u32,
 }
 
 /// Plage d'utilisation d'un son dans un évènement (résultat du balayage).
@@ -85,6 +92,8 @@ pub struct MapEntry {
     pub peak_volume: f32,
     /// Volume mesuré à chaque pas du balayage où le son est audible : `(régime, volume)`.
     pub curve: Vec<(f32, f32)>,
+    /// Hauteur de lecture appliquée par FMOD à chaque point de `curve` (1.0 = vitesse d'origine).
+    pub pitches: Vec<f32>,
 }
 
 impl MapEntry {
@@ -105,6 +114,20 @@ impl MapEntry {
                 v0 + (v1 - v0) * ((rpm - r0) / (r1 - r0)).clamp(0., 1.)
             }
         }
+    }
+
+    /// Régime « naturel » du son : celui du moteur enregistré tel que FMOD le restitue,
+    /// soit `régime / hauteur`, moyenné sur la plage où le son est audible (pondéré par
+    /// son volume). `None` si FMOD ne fait pas varier la hauteur de ce son.
+    pub fn native_rpm(&self) -> Option<f32> {
+        let (mut sum, mut weight) = (0f64, 0f64);
+        for (&(rpm, vol), &pitch) in self.curve.iter().zip(&self.pitches) {
+            if pitch > 0.02 && rpm > 0. {
+                sum += f64::from(rpm / pitch * vol);
+                weight += f64::from(vol);
+            }
+        }
+        (weight > 0.).then(|| (sum / weight) as f32)
     }
 
     /// Plages de fondu (entrée, sortie) en tr/min : régime parcouru entre l'apparition
@@ -312,8 +335,10 @@ pub fn sweep(lib: &Arc<FmodLib>, data: &EngineData, event: &EngineEvent, step: f
                     rpm_peak: rpm,
                     peak_volume: 0.,
                     curve: Vec::new(),
+                    pitches: Vec::new(),
                 });
                 e.curve.push((rpm, l.volume));
+                e.pitches.push(l.pitch);
                 e.rpm_min = e.rpm_min.min(rpm);
                 e.rpm_max = e.rpm_max.max(rpm);
                 if l.volume > e.peak_volume {
@@ -333,12 +358,47 @@ pub fn sweep(lib: &Arc<FmodLib>, data: &EngineData, event: &EngineEvent, step: f
     Ok(v)
 }
 
+/// Relevé détaillé (diagnostic) : pour chaque régime de `rpms`, les couches audibles
+/// après `updates` mises à jour du mixage (≈ 21 ms chacune en mode analyse).
+pub fn probe(
+    lib: &Arc<FmodLib>,
+    data: &EngineData,
+    event: &EngineEvent,
+    on_load: bool,
+    rpms: &[f32],
+    updates: u32,
+) -> Result<Vec<(f32, Vec<ActiveLayer>)>> {
+    let sys = System::new(lib.clone(), Output::Analysis)?;
+    data.load_base(&sys)?;
+    let bank = sys.load_bank(&data.bank(event.bank)?.bytes)?;
+    sys.load_sample_data(bank);
+    for _ in 0..4 {
+        sys.update();
+    }
+    let inst = sys.create_instance(&event.info.path)?;
+    sys.set_param(&inst, LOAD, if on_load { 1. } else { 0. });
+    sys.set_param(&inst, RPM, rpms.first().copied().unwrap_or(0.));
+    sys.start(&inst);
+    let mut out = Vec::new();
+    for &rpm in rpms {
+        sys.set_param(&inst, RPM, rpm);
+        for _ in 0..updates {
+            sys.update();
+        }
+        out.push((rpm, data.to_active(event.bank, sys.layers(&inst))));
+    }
+    sys.release(inst);
+    sys.update();
+    sys.unload_bank(bank);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn entry(curve: Vec<(f32, f32)>) -> MapEntry {
-        MapEntry { sound: SoundRef { bank: 0, sample: 0 }, on_load: true, rpm_min: curve[0].0, rpm_max: curve.last().unwrap().0, rpm_peak: 2000., peak_volume: 1., curve }
+        MapEntry { sound: SoundRef { bank: 0, sample: 0 }, on_load: true, rpm_min: curve[0].0, rpm_max: curve.last().unwrap().0, rpm_peak: 2000., peak_volume: 1., pitches: vec![1.; curve.len()], curve }
     }
 
     #[test]

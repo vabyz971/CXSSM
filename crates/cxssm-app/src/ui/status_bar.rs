@@ -1,4 +1,4 @@
-//! Barre d'état : version et message en cours, bundle ouvert, sons remplacés et encodeur.
+//! Barre d'état : version et message en cours, projet ou bundle ouvert, sons remplacés et encodeur.
 
 use cxssm_core::update::CURRENT_VERSION;
 use gpui::{div, prelude::*, px, Entity};
@@ -8,11 +8,11 @@ use crate::theme;
 use crate::widgets::on;
 
 pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
-    let source = s
-        .project
-        .as_ref()
-        .map(|p| p.source.display().to_string())
-        .unwrap_or_else(|| s.t("Aucun bundle chargé", "No bundle loaded").into());
+    let source = match (&s.workspace, &s.project) {
+        (Some(w), _) => w.file.display().to_string(),
+        (None, Some(p)) => p.source.display().to_string(),
+        _ => s.t("Aucun bundle chargé", "No bundle loaded").into(),
+    };
     let replaced = s.replaced_count();
     let encoder = if s.encoder.fsbankcl.is_some() {
         s.t("Encodeur FMOD : OK", "FMOD encoder: OK")

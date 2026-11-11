@@ -5,7 +5,7 @@
 //! ┌ app_bar ─────────────────────────────────────────────────────────┐
 //! │ tree │ en-tête · rpm_simulator · sound_list            │ side_panel │
 //! └ status_bar ──────────────────────────────────────────────────────┘
-//!                       (preferences : fenêtre modale)
+//!            (preferences, project_dialog : fenêtres modales)
 //! ```
 
 use gpui::{div, prelude::*, px, Context, Entity, FontWeight, MouseButton, MouseMoveEvent, Window};
@@ -13,17 +13,19 @@ use gpui::{div, prelude::*, px, Context, Entity, FontWeight, MouseButton, MouseM
 mod app_bar;
 mod fmod_setup;
 mod preferences;
+mod project_dialog;
 mod rpm_simulator;
 mod side_panel;
 mod sound_list;
 mod status_bar;
+mod track_editor;
 mod tree;
 
 use crate::assets::{icon_sm, Icon};
 use crate::i18n;
 use crate::state::{AppState, Leaf};
 use crate::theme;
-use crate::widgets::{on, primary, segment, segmented};
+use crate::widgets::{button, on, primary, segment, segmented};
 
 /// Vue racine : assemble les composants et relaie les glisser à l'état partagé.
 pub struct Workspace {
@@ -33,6 +35,7 @@ pub struct Workspace {
     sounds: Entity<sound_list::SoundList>,
     side: Entity<side_panel::SidePanel>,
     prefs: Entity<preferences::Preferences>,
+    project: Entity<project_dialog::ProjectDialog>,
     fmod_setup: Entity<fmod_setup::FmodSetup>,
 }
 
@@ -46,6 +49,7 @@ impl Workspace {
             sounds: cx.new(|_| sound_list::SoundList::new(state.clone())),
             side: cx.new(|_| side_panel::SidePanel::new(state.clone())),
             prefs: cx.new(|_| preferences::Preferences::new(state.clone())),
+            project: cx.new(|_| project_dialog::ProjectDialog::new(state.clone())),
             fmod_setup: cx.new(|_| fmod_setup::FmodSetup::new(state.clone())),
             state,
         }
@@ -139,10 +143,20 @@ impl Workspace {
                         .child("CarX Street_Data/StreamingAssets/aa/<platform>/fmod_assets_all.bundle"),
                 )
                 .child(
-                    primary("open-empty")
-                        .child(icon_sm(Icon::Folder, theme::ON_ACCENT))
-                        .child(s.t("Ouvrir un bundle", "Open a bundle"))
-                        .on_click(on(&self.state, |s, cx| s.open_file_dialog(cx))),
+                    div()
+                        .flex()
+                        .gap(theme::GAP_SM)
+                        .child(
+                            primary("open-empty")
+                                .child(icon_sm(Icon::Folder, theme::ON_ACCENT))
+                                .child(s.t("Ouvrir un projet ou un bundle", "Open a project or a bundle"))
+                                .on_click(on(&self.state, |s, cx| s.open_file_dialog(cx))),
+                        )
+                        .child(
+                            button("new-project-empty")
+                                .child(s.t("Nouveau projet", "New project"))
+                                .on_click(on(&self.state, |s, cx| s.new_project(cx))),
+                        ),
                 ),
         )
     }
@@ -195,6 +209,7 @@ impl Render for Workspace {
             .child(app_bar::render(s, &state))
             .child(body)
             .child(status_bar::render(s, &state))
+            .when(s.project_dialog && s.workspace.is_some() && !s.prefs_open, |d| d.child(self.project.clone()))
             .when(s.prefs_open, |d| d.child(self.prefs.clone()))
             .when(s.fmod_help_open && !s.prefs_open, |d| d.child(self.fmod_setup.clone()))
     }

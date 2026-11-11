@@ -12,7 +12,7 @@ pub struct DecodedSound {
     pub extension: &'static str,
 }
 
-fn pcm16(codec: Codec, sample: &Sample) -> Result<Vec<i16>> {
+pub(crate) fn pcm16(codec: Codec, sample: &Sample) -> Result<Vec<i16>> {
     Ok(match codec {
         Codec::Vorbis => vorbis::decode_pcm16(sample)?,
         Codec::Pcm16 => sample.data.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes(*b)).collect(),
@@ -83,7 +83,7 @@ fn spectrum_of(pcm: &[i16], channels: usize, rate: u32, bins: usize) -> Vec<f32>
 }
 
 /// FFT complexe en place (radix 2, taille puissance de 2).
-fn fft(re: &mut [f32], im: &mut [f32]) {
+pub(crate) fn fft(re: &mut [f32], im: &mut [f32]) {
     let n = re.len();
     let mut j = 0;
     for i in 1..n {
@@ -138,7 +138,7 @@ fn envelope(pcm: &[i16], bins: usize) -> Vec<f32> {
     v
 }
 
-fn wav(pcm: &[i16], rate: u32, channels: u16) -> Result<Vec<u8>> {
+pub(crate) fn wav(pcm: &[i16], rate: u32, channels: u16) -> Result<Vec<u8>> {
     let spec = hound::WavSpec { channels, sample_rate: rate, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
     let mut cursor = std::io::Cursor::new(Vec::with_capacity(44 + pcm.len() * 2));
     {

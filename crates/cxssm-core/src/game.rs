@@ -110,9 +110,128 @@ pub fn find_bundles() -> Vec<PathBuf> {
     all
 }
 
+/// Taille de `fmod_assets_all.bundle` déclarée par le catalogue Addressables du jeu
+/// (`aa/catalog.json`, à côté du dossier de plateforme). C'est la taille du fichier
+/// **d'origine** : un bundle de taille différente a été modifié.
+///
+/// `None` si le catalogue est absent (bundle copié hors du jeu) ou illisible.
+pub fn catalog_bundle_size(bundle: &Path) -> Option<u64> {
+    let catalog = bundle.parent()?.parent()?.join("catalog.json");
+    let text = std::fs::read_to_string(catalog).ok()?;
+    let name = bundle.file_name()?.to_str()?;
+    bundle_size_in_catalog(&text, name)
+}
+
+/// Lit `m_BundleSize` du bundle `name` dans le texte d'un `catalog.json`.
+///
+/// Disposition (Addressables 1.x) : `m_EntryDataString` (base64) = i32 n, puis n entrées
+/// de 7 i32 (`internal_id, provider, dep_key, dep_hash, data_index, primary_key, type`) ;
+/// `data_index` est un décalage dans `m_ExtraDataString` (base64) où se trouve l'objet
+/// sérialisé : u8 type, nom d'assembly et de classe (u8 longueur + ASCII), i32 longueur
+/// puis le JSON des options (UTF-16).
+pub fn bundle_size_in_catalog(catalog: &str, name: &str) -> Option<u64> {
+    let c: serde_json::Value = serde_json::from_str(catalog).ok()?;
+    let ids = c.get("m_InternalIds")?.as_array()?;
+    let suffix = format!("/{name}");
+    let id = ids.iter().position(|v| v.as_str().is_some_and(|s| s.ends_with(&suffix)))?;
+    let entries = base64_decode(c.get("m_EntryDataString")?.as_str()?)?;
+    let extra = base64_decode(c.get("m_ExtraDataString")?.as_str()?)?;
+    let i32_at = |d: &[u8], p: usize| d.get(p..p + 4).map(|b| i32::from_le_bytes(b.try_into().expect("4")));
+    let count = i32_at(&entries, 0)?.max(0) as usize;
+    let data_index = (0..count).find_map(|k| {
+        let base = 4 + k * 28;
+        (i32_at(&entries, base)? == id as i32).then(|| i32_at(&entries, base + 16)).flatten()
+    })?;
+    // Objet sérialisé à `data_index`.
+    let mut p = usize::try_from(data_index).ok()?;
+    p += 1; // type (7 = objet JSON)
+    for _ in 0..2 {
+        let len = *extra.get(p)? as usize;
+        p += 1 + len;
+    }
+    let len = i32_at(&extra, p)?.max(0) as usize;
+    p += 4;
+    let raw = extra.get(p..p + len)?;
+    let units: Vec<u16> = (0..len / 2).map(|i| u16::from_le_bytes([raw[2 * i], raw[2 * i + 1]])).collect();
+    let json: serde_json::Value = serde_json::from_str(&String::from_utf16(&units).ok()?).ok()?;
+    json.get("m_BundleSize")?.as_u64()
+}
+
+/// Décodage base64 standard (avec ou sans `=` final).
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let val = |c: u8| -> Option<u32> {
+        Some(match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        } as u32)
+    };
+    let bytes: Vec<u8> = s.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=').collect();
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    for chunk in bytes.chunks(4) {
+        let mut acc = 0u32;
+        for (i, &c) in chunk.iter().enumerate() {
+            acc |= val(c)? << (18 - 6 * i);
+        }
+        let n = chunk.len().saturating_sub(1);
+        out.extend_from_slice(&acc.to_be_bytes()[1..1 + n]);
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_base64() {
+        assert_eq!(base64_decode("TWFu").unwrap(), b"Man");
+        assert_eq!(base64_decode("TWE=").unwrap(), b"Ma");
+        assert_eq!(base64_decode("TQ==").unwrap(), b"M");
+    }
+
+    /// Catalogue minimal au format Addressables : deux bundles, options en UTF-16.
+    #[test]
+    fn reads_bundle_size_from_catalog() {
+        fn b64(d: &[u8]) -> String {
+            const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            d.chunks(3)
+                .flat_map(|c| {
+                    let n = (u32::from(c[0]) << 16) | (u32::from(*c.get(1).unwrap_or(&0)) << 8) | u32::from(*c.get(2).unwrap_or(&0));
+                    (0..4).map(move |i| if i <= c.len() { A[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' })
+                })
+                .collect()
+        }
+        let object = |size: u64| {
+            let mut o = vec![7u8, 3];
+            o.extend(b"Asm");
+            o.push(3);
+            o.extend(b"Cls");
+            let json: Vec<u8> = format!("{{\"m_Crc\":0,\"m_BundleSize\":{size}}}").encode_utf16().flat_map(u16::to_le_bytes).collect();
+            o.extend((json.len() as i32).to_le_bytes());
+            o.extend(json);
+            o
+        };
+        let (a, b) = (object(111), object(209_703_970));
+        let mut extra = a.clone();
+        extra.extend(&b);
+        let mut entries = 2i32.to_le_bytes().to_vec();
+        for (id, data) in [(0, 0), (1, a.len() as i32)] {
+            for v in [id, 2, -1, 0, data, id, 0] {
+                entries.extend(v.to_le_bytes());
+            }
+        }
+        let catalog = format!(
+            r#"{{"m_InternalIds":["{{R}}/x/other.bundle","{{R}}/x/fmod_assets_all.bundle"],"m_EntryDataString":"{}","m_ExtraDataString":"{}"}}"#,
+            b64(&entries),
+            b64(&extra)
+        );
+        assert_eq!(bundle_size_in_catalog(&catalog, "fmod_assets_all.bundle"), Some(209_703_970));
+        assert_eq!(bundle_size_in_catalog(&catalog, "missing.bundle"), None);
+    }
 
     #[test]
     fn parses_library_folders() {

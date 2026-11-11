@@ -338,3 +338,42 @@ pub fn fmt_int(n: f32, lang: cxssm_core::Language) -> String {
     }
     out
 }
+
+/// Curseur horizontal réglé au glisser (voir [`Drag::Slider`]) : `value` dans 0..1.
+/// `centered` : le remplissage part du milieu (réglage ± autour de zéro).
+pub fn slider(
+    id: impl Into<ElementId>,
+    track: &std::rc::Rc<std::cell::Cell<Bounds<gpui::Pixels>>>,
+    value: f32,
+    centered: bool,
+    on_down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    let v = value.clamp(0., 1.);
+    let (from, to) = if centered { (v.min(0.5), v.max(0.5)) } else { (0., v) };
+    let track = track.clone();
+    div()
+        .id(id.into())
+        .relative()
+        .w_full()
+        .h(px(18.))
+        .cursor_pointer()
+        .child(div().absolute().left_0().right_0().top(px(6.)).h(px(6.)).rounded(px(3.)).bg(theme::TRACK))
+        .child(
+            div()
+                .absolute()
+                .top(px(6.))
+                .h(px(6.))
+                .left(gpui::relative(from))
+                .w(gpui::relative(to - from))
+                .rounded(px(3.))
+                .bg(theme::ACCENT),
+        )
+        .when(centered, |d| d.child(div().absolute().top(px(3.)).h(px(12.)).w(px(1.)).left(gpui::relative(0.5)).bg(theme::BORDER_HOVER)))
+        .child(
+            div().absolute().top(px(2.)).left(gpui::relative(v)).w(px(0.)).child(
+                div().ml(px(-7.)).size(px(14.)).rounded(px(7.)).bg(theme::TEXT_BRIGHT).border_2().border_color(theme::ACCENT),
+            ),
+        )
+        .child(canvas(move |b, _, _| track.set(b), |_, _, _, _| {}).absolute().size_full())
+        .on_mouse_down(MouseButton::Left, on_down)
+}

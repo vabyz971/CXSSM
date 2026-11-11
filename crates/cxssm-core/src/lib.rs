@@ -8,7 +8,8 @@
 //! - [`encoder`] : encodage FSB5 (PCM natif, ou `fsbankcl` de FMOD pour Vorbis/FADPCM)
 //! - [`preview`] : décodage d'un son du jeu pour l'écouter ou l'exporter
 //! - [`engine`] : simulateur moteur (API FMOD Studio) et carte des sons par régime
-//! - [`export`] : écriture du bundle modifié dans un dossier de sortie (Steam Workshop)
+//! - [`export`] : écriture du bundle modifié dans un dossier de sortie
+//! - [`workspace`] : projet `.cxssm` (dossier : original, mod, pistes importées et éditées)
 
 pub mod audio;
 pub mod encoder;
@@ -17,10 +18,12 @@ pub mod error;
 pub mod export;
 pub mod fmod_install;
 pub mod game;
+pub mod generator;
 pub mod preview;
 pub mod project;
 pub mod settings;
 pub mod update;
+pub mod workspace;
 
 pub use error::{Error, Result};
 pub use fmod_install::FmodInstall;

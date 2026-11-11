@@ -53,6 +53,8 @@ pub struct Settings {
     pub fmod_dir: Option<PathBuf>,
     /// Vérifier au démarrage si une nouvelle version est publiée sur GitHub.
     pub check_updates: bool,
+    /// Dernier projet `.cxssm` ouvert (rouvert au démarrage, avant le bundle du jeu).
+    pub last_project: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -65,6 +67,7 @@ impl Default for Settings {
             bundle_path: None,
             fmod_dir: None,
             check_updates: true,
+            last_project: None,
         }
     }
 }
@@ -110,6 +113,14 @@ impl Settings {
         } else {
             self.hidden_categories.push(c);
         }
+    }
+
+    /// À ouvrir au démarrage : le dernier projet s'il existe encore, sinon le bundle du jeu.
+    pub fn startup_path(&self) -> Option<PathBuf> {
+        if !self.auto_open {
+            return None;
+        }
+        self.last_project.clone().filter(|p| p.is_file()).or_else(|| self.startup_bundle())
     }
 
     /// Bundle à ouvrir au démarrage : celui choisi par l'utilisateur s'il existe encore,

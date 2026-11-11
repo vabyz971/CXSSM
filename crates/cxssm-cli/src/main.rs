@@ -40,6 +40,54 @@ enum Cmd {
         #[arg(long, default_value_t = 250.)]
         step: f32,
     },
+    /// Diagnostic : volume, hauteur et tête de lecture de chaque couche, régime par régime.
+    EngineProbe {
+        bundle: PathBuf,
+        #[arg(long)]
+        event: String,
+        /// Pied levé (Load = 0) au lieu de l'accélération.
+        #[arg(long)]
+        off_load: bool,
+        #[arg(long, default_value_t = 500.)]
+        step: f32,
+        /// Mises à jour du mixage par pas (≈ 21 ms chacune).
+        #[arg(long, default_value_t = 8)]
+        updates: u32,
+    },
+    /// [Expérimental] Recrée les boucles moteur d'une voiture depuis des enregistrements
+    /// continus (balayage du régime). Écrit les WAV générés et, avec `--export`, le bundle.
+    Generate {
+        bundle: PathBuf,
+        /// Évènement moteur de la voiture (voir `engine-map`), ex. `992`.
+        #[arg(long)]
+        event: String,
+        /// Balayage en accélération (WAV).
+        #[arg(long)]
+        acc: PathBuf,
+        /// Balayage pied levé (WAV) ; à défaut, l'accélération sert pour tout.
+        #[arg(long)]
+        dec: Option<PathBuf>,
+        /// Harmonique dominante : explosions par tour (3 pour un 6 cylindres, 2 pour un 4, 4 pour un V8).
+        #[arg(long, default_value_t = cxssm_core::generator::DEFAULT_ORDER)]
+        order: f32,
+        #[arg(long, default_value = "output/generated")]
+        out: PathBuf,
+        /// Exporte aussi le bundle modifié (nécessite l'encodeur FMOD).
+        #[arg(long)]
+        export: bool,
+        #[arg(long, default_value_t = 80)]
+        quality: u8,
+    },
+    /// Décode des sons du jeu en WAV (`--sound` répétable).
+    ExtractSounds {
+        bundle: PathBuf,
+        #[arg(long)]
+        bank: String,
+        #[arg(long, required = true)]
+        sound: Vec<String>,
+        #[arg(long, default_value = "output/sounds")]
+        out: PathBuf,
+    },
     /// Liste les banques FMOD et leurs sons.
     List { bundle: PathBuf },
     /// Remplace un son et exporte le bundle modifié.
@@ -159,6 +207,165 @@ fn main() -> Result<()> {
                         );
                     }
                 }
+            }
+        }
+        Cmd::EngineProbe { bundle, event, off_load, step, updates } => {
+            use cxssm_core::engine;
+            let fmod = cxssm_core::FmodInstall::resolve(None).context("FMOD Engine introuvable")?;
+            let lib = engine::load_library(&fmod.api)?;
+            let p = ModProject::open(&bundle)?;
+            let data = engine::EngineData::from_project(&p);
+            let events = engine::list_events(&lib, &data)?;
+            let Some(e) = events.iter().find(|e| e.name() == event) else { bail!("évènement « {event} » introuvable") };
+            let (min, max) = e.rpm_range();
+            let rpms: Vec<f32> = std::iter::successors(Some(min), |r| Some(r + step)).take_while(|&r| r <= max).collect();
+            for (rpm, layers) in engine::probe(&lib, &data, e, !off_load, &rpms, updates)? {
+                let cells: Vec<String> = layers
+                    .iter()
+                    .map(|l| {
+                        let name = l.sound.map_or("?".into(), |r| p.banks[r.bank].fsb.samples[r.sample].name.clone());
+                        format!("{name} v{:.2} p{:.3} @{}", l.volume, l.pitch, l.position_pcm)
+                    })
+                    .collect();
+                println!("{rpm:>6.0}  {}", cells.join("  |  "));
+            }
+        }
+        Cmd::Generate { bundle, event, acc, dec, order, out, export: do_export, quality } => {
+            use cxssm_core::{engine, generator as gen};
+            let fmod = cxssm_core::FmodInstall::resolve(None).context("FMOD Engine introuvable")?;
+            let lib = engine::load_library(&fmod.api)?;
+            let mut p = ModProject::open(&bundle)?;
+            let data = engine::EngineData::from_project(&p);
+            let events = engine::list_events(&lib, &data)?;
+            let Some(e) = events.iter().find(|e| e.name() == event) else { bail!("évènement « {event} » introuvable") };
+
+            // Enregistrements et suivi du régime.
+            let mut recs = Vec::new();
+            for (label, path) in [("accélération", Some(&acc)), ("pied levé", dec.as_ref())] {
+                let Some(path) = path else { continue };
+                let rec = gen::Recording::load(path)?;
+                let tr = gen::track_rpm(&rec, order)?;
+                let (lo, hi) = tr.range().context("régime introuvable dans l'enregistrement")?;
+                let ok = tr.valid.iter().filter(|&&v| v).count();
+                println!(
+                    "{label:<12} {:>5.1} s  régime {lo:>5.0} → {hi:>5.0} tr/min  ({ok}/{} images exploitables)",
+                    rec.duration_secs(),
+                    tr.valid.len()
+                );
+                let step = (tr.rpm.len() / 12).max(1);
+                let pts: Vec<String> = (0..tr.rpm.len())
+                    .step_by(step)
+                    .map(|i| format!("{:.1}s:{:.0}{}", tr.time(i, rec.rate), tr.rpm[i], if tr.valid[i] { "" } else { "?" }))
+                    .collect();
+                println!("             {}", pts.join("  "));
+                if std::env::var_os("CXSSM_GEN_DEBUG").is_some() {
+                    for i in 0..tr.rpm.len() {
+                        let (a, b) = tr.salience[i];
+                        println!("    {:5.2}s {:6.0} {a:5.1} {b:5.1}", tr.time(i, rec.rate), tr.rpm[i]);
+                    }
+                }
+                recs.push((rec, tr));
+            }
+
+            // Un son peut servir dans les deux phases : on prend celle où il est le plus fort.
+            let mut entries: Vec<engine::MapEntry> = Vec::new();
+            for m in engine::sweep(&lib, &data, e, 100.)? {
+                match entries.iter_mut().find(|x| x.sound == m.sound) {
+                    Some(x) if x.peak_volume >= m.peak_volume => {}
+                    Some(x) => *x = m,
+                    None => entries.push(m),
+                }
+            }
+            std::fs::create_dir_all(&out)?;
+            println!("\n{} ({} sons utilisés)", e.info.path, entries.len());
+            let mut generated = Vec::new();
+            for m in &entries {
+                let bank = &p.banks[m.sound.bank];
+                let s = &bank.fsb.samples[m.sound.sample];
+                let phase = if m.on_load { "accélération" } else { "pied levé" };
+                let head = format!("  {:<12} {phase:<12} {:>5.0}–{:<5.0}", s.name, m.rpm_min, m.rpm_max);
+                let Some(native) = m.native_rpm() else {
+                    println!("{head}  hauteur fixe : conservé");
+                    continue;
+                };
+                let spec = gen::LoopSpec {
+                    rpm: native,
+                    rate: s.frequency,
+                    channels: s.channels,
+                    seconds: (s.duration_secs() as f32).clamp(1., 2.5),
+                    rms: gen::sample_rms(bank.fsb.codec, s)?,
+                    source_rpm: None,
+                };
+                // Enregistrement de la même phase en priorité, l'autre s'il ne couvre pas ce régime.
+                let order = if m.on_load || recs.len() < 2 { [0, 1] } else { [1, 0] };
+                let mut result: Result<(usize, gen::Generated), String> = Err(String::new());
+                for k in order.into_iter().filter(|&k| k < recs.len()) {
+                    let (rec, tr) = &recs[k];
+                    match gen::make_loop(rec, tr, spec) {
+                        Ok(g) => {
+                            result = Ok((k, g));
+                            break;
+                        }
+                        // On garde le message de l'enregistrement de la même phase.
+                        Err(err) if k == order[0] => result = Err(err.to_string()),
+                        Err(_) => {}
+                    }
+                }
+                match result {
+                    Ok((k, g)) => {
+                        let path = out.join(format!("{}_{}.wav", bank.name, s.name));
+                        gen::write_wav(&path, &g)?;
+                        println!(
+                            "{head}  naturel {native:>5.0} ← {:>5.0} tr/min à {:>4.1} s ({}, hauteur ×{:.2}, {:.2} s)",
+                            g.source_rpm,
+                            g.source_time,
+                            if k == 0 { "accélération" } else { "pied levé" },
+                            g.shift,
+                            g.pcm.len() as f32 / f32::from(g.channels) / g.rate as f32,
+                        );
+                        generated.push((m.sound, path));
+                    }
+                    Err(err) => println!("{head}  naturel {native:>5.0} tr/min : {err} → original conservé"),
+                }
+            }
+            // Les sons d'une banque sont partagés : prévenir si d'autres voitures les utilisent.
+            let mut shared: Vec<(String, Vec<String>)> = Vec::new();
+            for other in events.iter().filter(|o| o.bank == e.bank && o.info.path != e.info.path) {
+                let used = engine::sweep(&lib, &data, other, 500.)?;
+                let names: Vec<String> = generated
+                    .iter()
+                    .filter(|(r, _)| used.iter().any(|m| m.sound == *r))
+                    .map(|(r, _)| p.banks[r.bank].fsb.samples[r.sample].name.clone())
+                    .collect();
+                if !names.is_empty() {
+                    shared.push((other.name().to_string(), names));
+                }
+            }
+            if !shared.is_empty() {
+                println!("\n⚠ Sons partagés avec d'autres voitures de la banque (elles changeront aussi) :");
+                for (car, names) in shared {
+                    println!("  {car:<12} {}", names.join(", "));
+                }
+            }
+            if do_export {
+                let fsbankcl = fmod.fsbank.clone();
+                for (r, path) in generated {
+                    p.set_replacement(r, path);
+                }
+                let path = export::export(&p, &EncoderConfig { fsbankcl, quality }, &out)?;
+                println!("bundle écrit : {}", path.display());
+            }
+        }
+        Cmd::ExtractSounds { bundle, bank, sound, out } => {
+            let p = ModProject::open(&bundle)?;
+            let Some(b) = p.banks.iter().find(|b| b.name == bank) else { bail!("banque « {bank} » introuvable") };
+            std::fs::create_dir_all(&out)?;
+            for name in sound {
+                let Some(s) = b.fsb.samples.iter().find(|s| s.name == name) else { bail!("son « {name} » introuvable") };
+                let d = cxssm_core::preview::decode(b.fsb.codec, s)?;
+                let path = out.join(format!("{bank}_{name}.{}", d.extension));
+                std::fs::write(&path, &d.bytes)?;
+                println!("{}", path.display());
             }
         }
         Cmd::List { bundle } => {
