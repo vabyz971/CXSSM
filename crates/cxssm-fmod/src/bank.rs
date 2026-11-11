@@ -40,7 +40,9 @@ impl Bank {
         Fsb5::parse(self.fsb_bytes())
     }
 
-    /// Remplace le FSB5 en recalculant la taille du chunk `SND ` et du RIFF.
+    /// Remplace le FSB5 en recalculant la taille du chunk `SND `, du RIFF et l'entrée
+    /// de l'index `SNDH` (position et taille du FSB, lues par FMOD au chargement : une
+    /// taille périmée fait refuser la banque ou tronque ses derniers sons).
     pub fn with_fsb(&self, fsb: &[u8]) -> Vec<u8> {
         let old_end = self.fsb_offset + self.fsb_len;
         let mut out = Vec::with_capacity(self.raw.len() - self.fsb_len + fsb.len());
@@ -51,6 +53,19 @@ impl Bank {
         out[self.snd_chunk + 4..self.snd_chunk + 8].copy_from_slice(&new_chunk_size.to_le_bytes());
         let riff = (out.len() - 8) as u32;
         out[4..8].copy_from_slice(&riff.to_le_bytes());
+        // L'index précède le chunk `SND ` : ses offsets ne bougent pas.
+        if let Some(sndh) = find_chunk(&out, 12, self.snd_chunk, b"SNDH") {
+            let size = u32_at(&out, sndh + 4).unwrap_or(0) as usize;
+            let body = sndh + 8;
+            // En-tête de 4 octets puis des paires (offset, taille) en u32.
+            let mut e = body + 4;
+            while e + 8 <= body + size {
+                if u32_at(&out, e).ok() == Some(self.fsb_offset as u32) {
+                    out[e + 4..e + 8].copy_from_slice(&(fsb.len() as u32).to_le_bytes());
+                }
+                e += 8;
+            }
+        }
         out
     }
 
@@ -81,4 +96,50 @@ fn u32_at(d: &[u8], p: usize) -> Result<u32> {
     d.get(p..p + 4)
         .map(|b| u32::from_le_bytes(b.try_into().expect("4 octets")))
         .ok_or(Error::UnexpectedEof(p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chunk(id: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut c = id.to_vec();
+        c.extend((body.len() as u32).to_le_bytes());
+        c.extend(body);
+        c
+    }
+
+    /// Banque minimale : `LIST:PROJ { SNDH }` puis `SND ` (padding + FSB5).
+    fn bank(fsb: &[u8]) -> Vec<u8> {
+        // RIFF(12) + LIST(8) + "PROJ"(4) + SNDH(8 + 12) = 44, puis SND (8) + 4 de padding.
+        let fsb_offset = 44 + 8 + 4;
+        let mut sndh = 0x0008_0003u32.to_le_bytes().to_vec();
+        sndh.extend((fsb_offset as u32).to_le_bytes());
+        sndh.extend((fsb.len() as u32).to_le_bytes());
+        let mut proj = b"PROJ".to_vec();
+        proj.extend(chunk(b"SNDH", &sndh));
+        let mut snd = vec![0u8; 4];
+        snd.extend(fsb);
+        let mut body = b"FEV ".to_vec();
+        body.extend(chunk(b"LIST", &proj));
+        body.extend(chunk(b"SND ", &snd));
+        let raw = chunk(b"RIFF", &body);
+        assert_eq!(&raw[fsb_offset..fsb_offset + 4], b"FSB5");
+        raw
+    }
+
+    #[test]
+    fn with_fsb_updates_sizes_and_sndh_index() {
+        let raw = bank(b"FSB5 ancien");
+        let b = Bank::parse(raw).unwrap();
+        for new in [&b"FSB5 nouveau, plus long"[..], &b"FSB5"[..]] {
+            let out = b.with_fsb(new);
+            let back = Bank::parse(out.clone()).unwrap();
+            assert_eq!(back.fsb_bytes(), new);
+            assert_eq!(u32_at(&out, 4).unwrap() as usize, out.len() - 8);
+            let sndh = find_chunk(&out, 12, out.len(), b"SNDH").unwrap();
+            assert_eq!(u32_at(&out, sndh + 12).unwrap() as usize, back.fsb_offset);
+            assert_eq!(u32_at(&out, sndh + 16).unwrap() as usize, new.len());
+        }
+    }
 }
