@@ -364,7 +364,6 @@ pub fn process_file(path: &Path, target: &Sample, gain_db: f32, pitch: f32) -> R
     let err = |e: hound::Error| Error::Audio(format!("{} : {e}", path.display()));
     let mut r = hound::WavReader::open(path).map_err(err)?;
     let spec = r.spec();
-    let ch_in = usize::from(spec.channels.max(1));
     let samples: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => r.samples::<f32>().collect::<std::result::Result<_, _>>().map_err(err)?,
         hound::SampleFormat::Int => {
@@ -372,6 +371,20 @@ pub fn process_file(path: &Path, target: &Sample, gain_db: f32, pitch: f32) -> R
             r.samples::<i32>().map(|s| s.map(|v| v as f32 * scale)).collect::<std::result::Result<_, _>>().map_err(err)?
         }
     };
+    Ok(process_pcm(&samples, spec.sample_rate, spec.channels, target, gain_db, pitch))
+}
+
+/// Le son d'origine du jeu avec un volume et une hauteur modifiés.
+pub fn process_original(codec: Codec, target: &Sample, gain_db: f32, pitch: f32) -> Result<Generated> {
+    let pcm = preview::pcm16(codec, target)?;
+    let samples: Vec<f32> = pcm.iter().map(|&v| f32::from(v) / 32768.).collect();
+    Ok(process_pcm(&samples, target.frequency, target.channels, target, gain_db, pitch))
+}
+
+/// PCM entrelacé (-1..1) → format du son cible : canaux adaptés, rééchantillonné
+/// (hauteur ×`pitch`), gain appliqué.
+fn process_pcm(samples: &[f32], rate: u32, channels: u16, target: &Sample, gain_db: f32, pitch: f32) -> Generated {
+    let ch_in = usize::from(channels.max(1));
     let ch_out = usize::from(target.channels.max(1));
     // Canaux séparés, adaptés au son cible (mono dupliqué ou canaux mixés).
     let planes: Vec<Vec<f32>> = (0..ch_out)
@@ -382,7 +395,7 @@ pub fn process_file(path: &Path, target: &Sample, gain_db: f32, pitch: f32) -> R
                 .collect()
         })
         .collect();
-    let step = f64::from(spec.sample_rate) / f64::from(target.frequency) * f64::from(pitch.max(0.05));
+    let step = f64::from(rate) / f64::from(target.frequency) * f64::from(pitch.max(0.05));
     let frames = (planes[0].len() as f64 / step).floor() as usize;
     let gain = 10f32.powf(gain_db / 20.);
     let mut pcm = Vec::with_capacity(frames * ch_out);
@@ -392,7 +405,7 @@ pub fn process_file(path: &Path, target: &Sample, gain_db: f32, pitch: f32) -> R
             pcm.push((v * 32767.).round().clamp(-32768., 32767.) as i16);
         }
     }
-    Ok(Generated { pcm, rate: target.frequency, channels: target.channels, source_rpm: 0., source_time: 0., shift: pitch })
+    Generated { pcm, rate: target.frequency, channels: target.channels, source_rpm: 0., source_time: 0., shift: pitch }
 }
 
 /// Niveau RMS (-1..1) d'un son du jeu, tous canaux confondus.
@@ -488,5 +501,30 @@ mod tests {
         let peak = g.pcm.iter().map(|v| v.unsigned_abs()).max().unwrap();
         assert!((15_000..=16_500).contains(&peak), "crête {peak}");
         assert!(g.pcm.chunks(2).all(|f| f[0] == f[1]), "mono dupliqué");
+    }
+
+    #[test]
+    fn process_original_changes_level_and_length() {
+        // Son PCM16 mono de 1 s à 22 050 Hz.
+        let pcm: Vec<i16> = (0..22_050).map(|i| ((i as f32 * 0.03).sin() * 10_000.) as i16).collect();
+        let target = Sample {
+            name: "orig".into(),
+            frequency: 22_050,
+            channels: 1,
+            num_samples: pcm.len() as _,
+            loop_range: None,
+            vorbis_crc: None,
+            chunks: Vec::new(),
+            data: pcm.iter().flat_map(|v| v.to_le_bytes()).collect(),
+            header_bits: None,
+        };
+        // -6 dB, 7 demi-tons plus bas (×0,667) : 1,5 fois plus long.
+        let ratio = (-7f32 / 12.).exp2();
+        let g = process_original(Codec::Pcm16, &target, -6.02, ratio).unwrap();
+        assert_eq!((g.rate, g.channels), (22_050, 1));
+        let expected = (22_050. / ratio) as i64;
+        assert!((g.pcm.len() as i64 - expected).abs() <= 2, "{} échantillons", g.pcm.len());
+        let peak = g.pcm.iter().map(|v| v.unsigned_abs()).max().unwrap();
+        assert!((4_800..=5_100).contains(&peak), "crête {peak}");
     }
 }

@@ -27,8 +27,8 @@ fn step(n: u8, title: &'static str, body: impl IntoElement) -> impl IntoElement 
                 .justify_center()
                 .size(px(26.))
                 .rounded(px(13.))
-                .bg(theme::ACCENT)
-                .text_color(theme::ON_ACCENT)
+                .bg(theme::accent())
+                .text_color(theme::on_accent())
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(n.to_string()),
         )
@@ -45,7 +45,7 @@ fn step(n: u8, title: &'static str, body: impl IntoElement) -> impl IntoElement 
 }
 
 fn text(t: impl Into<SharedString>) -> gpui::Div {
-    div().text_color(theme::TEXT_DIM).child(t.into())
+    div().text_color(theme::text_dim()).child(t.into())
 }
 
 /// Chemin ou commande en police à chasse fixe.
@@ -54,9 +54,9 @@ fn code(t: impl Into<SharedString>) -> gpui::Div {
         .px(theme::GAP_SM)
         .py(px(5.))
         .rounded(theme::RADIUS_SM)
-        .bg(theme::FIELD)
+        .bg(theme::field())
         .border_1()
-        .border_color(theme::BORDER)
+        .border_color(theme::border())
         .font_family(theme::FONT_MONO)
         .text_size(theme::TEXT_SM)
         .child(t.into())
@@ -98,9 +98,9 @@ pub fn guide(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
             div()
                 .p(theme::GAP_MD)
                 .rounded(theme::RADIUS)
-                .bg(theme::ACCENT_TINT)
+                .bg(theme::accent_tint())
                 .border_1()
-                .border_color(theme::ACCENT_EDGE)
+                .border_color(theme::accent_edge())
                 .child(s.t(
                     "FMOD Engine est introuvable sur ce poste. CXSSM en a besoin pour encoder vos sons et faire \
                      tourner le simulateur moteur, mais sa licence interdit de l'inclure : installez-le en 3 étapes.",
@@ -126,12 +126,12 @@ pub fn guide(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
                         button("fmod-download")
                             .h(theme::BUTTON_H)
                             .font_weight(FontWeight::MEDIUM)
-                            .child(icon_sm(Icon::Download, theme::TEXT))
+                            .child(icon_sm(Icon::Download, theme::text()))
                             .child(s.t("Ouvrir la page de téléchargement", "Open the download page"))
                             .on_click(|_, _, cx| cx.open_url(DOWNLOAD_URL)),
                     ),
                 )
-                .child(div().font_family(theme::FONT_MONO).text_size(theme::TEXT_SM).text_color(theme::ACCENT).child(DOWNLOAD_URL)),
+                .child(div().font_family(theme::FONT_MONO).text_size(theme::TEXT_SM).text_color(theme::accent()).child(DOWNLOAD_URL)),
         ))
         .child(step(2, s.t("Décompressez-le ou installez-le", "Extract or install it"), install_steps(s)))
         .child(step(
@@ -155,7 +155,7 @@ pub fn guide(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
                         .child(
                             primary("fmod-choose")
                                 .h(theme::BUTTON_H)
-                                .child(icon_sm(Icon::Folder, theme::ON_ACCENT))
+                                .child(icon_sm(Icon::Folder, theme::on_accent()))
                                 .child(s.t("Choisir le dossier…", "Choose the folder…"))
                                 .on_click(on(state, |s, cx| s.choose_fmod_dir(cx))),
                         )
@@ -167,7 +167,7 @@ pub fn guide(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
                                 .on_click(on(state, |s, cx| s.retry_fmod_detection(cx))),
                         ),
                 )
-                .when_some(s.fmod_error.clone(), |d, e| d.child(div().text_size(theme::TEXT_SM).text_color(theme::DANGER).child(e))),
+                .when_some(s.fmod_error.clone(), |d, e| d.child(div().text_size(theme::TEXT_SM).text_color(theme::danger()).child(e))),
         ))
 }
 
@@ -193,9 +193,9 @@ impl Render for FmodSetup {
             .max_w(px(680.))
             .max_h(gpui::relative(0.92))
             .rounded(theme::RADIUS_XL)
-            .bg(theme::PANEL)
+            .bg(theme::panel())
             .border_1()
-            .border_color(theme::BORDER)
+            .border_color(theme::border())
             .overflow_hidden()
             .on_click(|_, _, cx| cx.stop_propagation())
             .child(
@@ -208,13 +208,13 @@ impl Render for FmodSetup {
                     .px(px(20.))
                     .py(theme::GAP_LG)
                     .border_b_1()
-                    .border_color(theme::DIVIDER)
+                    .border_color(theme::divider())
                     .child(div().text_size(theme::TEXT_TITLE).font_weight(FontWeight::SEMIBOLD).child(s.t("Installer FMOD Engine", "Install FMOD Engine")))
                     .child(
                         button("fmod-later")
                             .px(px(16.))
                             .font_weight(FontWeight::MEDIUM)
-                            .child(icon_sm(Icon::Close, theme::TEXT))
+                            .child(icon_sm(Icon::Close, theme::text()))
                             .child(s.t("Plus tard", "Later"))
                             .on_click(on(&self.state, |s, cx| s.set_fmod_help(false, cx))),
                     ),
@@ -226,9 +226,9 @@ impl Render for FmodSetup {
                     .px(px(24.))
                     .py(theme::GAP_MD)
                     .border_t_1()
-                    .border_color(theme::DIVIDER)
+                    .border_color(theme::divider())
                     .text_size(theme::TEXT_SM)
-                    .text_color(theme::TEXT_FAINT)
+                    .text_color(theme::text_faint())
                     .child(s.t(
                         "Sans FMOD, vous pouvez quand même parcourir et écouter les sons du bundle. Ce tutoriel reste \
                          accessible dans Préférences › FMOD.",
@@ -245,7 +245,7 @@ impl Render for FmodSetup {
             .items_center()
             .justify_center()
             .p(px(32.))
-            .bg(theme::BACKDROP)
+            .bg(theme::backdrop())
             .occlude()
             .on_click(on(&self.state, |s, cx| s.set_fmod_help(false, cx)))
             .child(dialog)

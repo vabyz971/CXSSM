@@ -27,5 +27,5 @@ pub mod workspace;
 
 pub use error::{Error, Result};
 pub use fmod_install::FmodInstall;
-pub use settings::{Language, Settings};
+pub use settings::{Language, Settings, Shortcuts, ThemeMode};
 pub use project::{ModProject, SoundCategory, SoundRef, SoundStatus};

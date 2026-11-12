@@ -68,6 +68,8 @@ pub struct Take {
 /// Origine du son de remplacement.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Source {
+    /// Son d'origine du jeu, seulement réglé (volume, hauteur).
+    Original,
     /// Fichier choisi par l'utilisateur.
     File(PathBuf),
     /// Passage d'un enregistrement : phase et régime du passage utilisé.
@@ -108,6 +110,24 @@ impl SoundEdit {
     }
 }
 
+/// Choix de la source dans l'onglet Édition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceKind {
+    Original,
+    File,
+    Recording,
+}
+
+impl Source {
+    pub fn kind(&self) -> SourceKind {
+        match self {
+            Source::Original => SourceKind::Original,
+            Source::File(_) => SourceKind::File,
+            Source::Recording { .. } => SourceKind::Recording,
+        }
+    }
+}
+
 /// Curseur en cours de glisser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slider {
@@ -135,6 +155,15 @@ impl Editor {
 
     pub fn track(&self, slider: Slider) -> &Rc<Cell<Bounds<Pixels>>> {
         &self.tracks[slider as usize]
+    }
+}
+
+/// Nom d'un curseur (français, anglais), pour l'historique.
+fn slider_name(slider: Slider) -> (&'static str, &'static str) {
+    match slider {
+        Slider::Gain => ("Volume", "Volume"),
+        Slider::Pitch => ("Hauteur", "Pitch"),
+        Slider::Passage => ("Passage", "Passage"),
     }
 }
 
@@ -249,28 +278,32 @@ impl AppState {
         self.default_recording_source(r).is_some()
     }
 
-    /// Change la source du son (fichier actuel ou enregistrement) et le rend.
-    pub fn set_edit_source(&mut self, r: SoundRef, from_recording: bool, cx: &mut Context<Self>) {
-        let source = if from_recording {
-            match self.default_recording_source(r) {
+    /// Source affichée pour un son : celle de son édition, sinon le fichier qui le
+    /// remplace, sinon le son d'origine.
+    pub fn source_kind(&self, r: SoundRef) -> SourceKind {
+        match self.editor.edits.get(&r) {
+            Some(e) => e.source.kind(),
+            None if self.project.as_ref().is_some_and(|p| p.replacements.contains_key(&r)) => SourceKind::File,
+            None => SourceKind::Original,
+        }
+    }
+
+    /// Change la source du son et le rend (volume et hauteur conservés).
+    pub fn set_edit_source(&mut self, r: SoundRef, kind: SourceKind, cx: &mut Context<Self>) {
+        if self.source_kind(r) == kind {
+            return;
+        }
+        if kind != SourceKind::File {
+            self.checkpoint("Source du son", "Sound source");
+        }
+        let source = match kind {
+            SourceKind::Original => Source::Original,
+            SourceKind::Recording => match self.default_recording_source(r) {
                 Some(s) => s,
                 None => return,
-            }
-        } else {
-            match self.editor.edits.get(&r).map(|e| &e.source) {
-                Some(Source::File(_)) => return,
-                _ => {
-                    // Revenir au fichier : il faut en choisir un.
-                    self.editor.edits.remove(&r);
-                    if let Some(p) = self.project.as_mut() {
-                        p.clear_replacement(r);
-                    }
-                    self.refresh_modded_engine(cx);
-                    self.project_changed(true);
-                    self.pick_replacement(r, cx);
-                    return;
-                }
-            }
+            },
+            // Fichier : il faut en choisir un ; rien ne change si le choix est annulé.
+            SourceKind::File => return self.pick_replacement(r, cx),
         };
         let edit = self.editor.edits.entry(r).or_insert_with(|| SoundEdit::new(source.clone()));
         edit.source = source;
@@ -282,11 +315,13 @@ impl AppState {
         let semis = self.editor.edits.get(&r).map_or(0., |e| e.semitones);
         let Some((lo, hi)) = self.passage_range(r, phase, semis) else { return };
         let native = self.native_rpm(r);
+        match self.editor.edits.get(&r).map(|e| &e.source) {
+            Some(Source::Recording { phase: p, .. }) if *p != phase => {}
+            _ => return,
+        }
+        self.checkpoint("Phase de l'enregistrement", "Recording phase");
         let Some(edit) = self.editor.edits.get_mut(&r) else { return };
         let Source::Recording { phase: p, rpm } = &mut edit.source else { return };
-        if *p == phase {
-            return;
-        }
         *p = phase;
         *rpm = native.unwrap_or(*rpm).clamp(lo, hi);
         self.render_edit(r, cx);
@@ -295,6 +330,7 @@ impl AppState {
     /// Le fichier choisi à la main devient la source de l'édition (réglages conservés).
     pub(super) fn on_file_replacement(&mut self, r: SoundRef, path: PathBuf, cx: &mut Context<Self>) {
         // Projet : le fichier est copié dans `audio/imported/`.
+        self.checkpoint("Importer un fichier", "Import a file");
         let path = match (&self.workspace, self.project.as_ref().and_then(|p| p.sample(r))) {
             (Some(ws), Some((bank, smp))) => match ws.import(&path, &bank.name, &smp.name) {
                 Ok(p) => p,
@@ -349,20 +385,42 @@ impl AppState {
         }
     }
 
-    /// Crée l'édition d'un son remplacé par un fichier (pour régler volume et hauteur).
+    /// Crée l'édition d'un son pour régler son volume et sa hauteur : celle du fichier
+    /// qui le remplace, sinon celle du son d'origine du jeu.
     pub fn ensure_edit(&mut self, r: SoundRef) {
         if self.editor.edits.contains_key(&r) {
             return;
         }
-        if let Some(path) = self.project.as_ref().and_then(|p| p.replacements.get(&r).cloned()) {
-            let mut e = SoundEdit::new(Source::File(path));
-            e.rendered = Some(0);
-            self.editor.edits.insert(r, e);
-        }
+        let source = match self.project.as_ref().and_then(|p| p.replacements.get(&r).cloned()) {
+            Some(path) => Source::File(path),
+            None => Source::Original,
+        };
+        let mut e = SoundEdit::new(source);
+        e.rendered = Some(0);
+        self.editor.edits.insert(r, e);
     }
 
-    /// Remet un réglage à zéro.
+    /// Remet un réglage à zéro : volume et hauteur pour tous les sons sélectionnés.
     pub fn reset_slider(&mut self, r: SoundRef, slider: Slider, cx: &mut Context<Self>) {
+        let targets = self.slider_targets(r, slider);
+        let (fr, en) = self.action_label(slider_name(slider).0, slider_name(slider).1, targets.len());
+        self.checkpoint(format!("{fr} à zéro"), format!("Reset {en}"));
+        for t in targets.into_iter().filter(|&t| t != r) {
+            self.ensure_edit(t);
+            if let Some(e) = self.editor.edits.get_mut(&t) {
+                match slider {
+                    Slider::Gain => e.gain_db = 0.,
+                    Slider::Pitch => e.semitones = 0.,
+                    Slider::Passage => continue,
+                }
+                self.render_edit(t, cx);
+            }
+        }
+        self.reset_one(r, slider, cx);
+    }
+
+    fn reset_one(&mut self, r: SoundRef, slider: Slider, cx: &mut Context<Self>) {
+        self.ensure_edit(r);
         let passage = match self.editor.edits.get(&r) {
             Some(e @ SoundEdit { source: Source::Recording { phase, .. }, .. }) => {
                 self.passage_range(r, *phase, e.semitones).zip(self.native_rpm(r)).map(|((lo, hi), n)| n.clamp(lo, hi))
@@ -396,11 +454,28 @@ impl AppState {
         let Some(p) = self.project.as_ref() else { return };
         let Some((bank, sample)) = p.sample(r) else { return };
         let (codec, sample, bank_name) = (bank.fsb.codec, sample.clone(), bank.name.clone());
+        // Numéro de rendu unique (même après annuler / rétablir, qui recrée les éditions).
+        self.editor.counter += 1;
+        let stamp = self.editor.counter;
         let Some(edit) = self.editor.edits.get_mut(&r) else { return };
-        edit.version += 1;
+        edit.version = stamp;
         edit.note = None;
         let (version, source, gain_db, pitch) = (edit.version, edit.source.clone(), edit.gain_db, edit.pitch_ratio());
 
+        // Son d'origine sans réglage : plus de remplacement.
+        if source == Source::Original && gain_db == 0. && pitch == 1. {
+            edit.rendered = Some(version);
+            let had = self.project.as_mut().is_some_and(|p| p.replacements.contains_key(&r));
+            if let Some(p) = self.project.as_mut() {
+                p.clear_replacement(r);
+            }
+            if had {
+                self.refresh_modded_engine(cx);
+                self.project_changed(true);
+            }
+            cx.notify();
+            return;
+        }
         // Fichier sans réglage : utilisé tel quel.
         if let Source::File(path) = &source {
             if gain_db == 0. && pitch == 1. {
@@ -420,9 +495,8 @@ impl AppState {
                 Some(t) => Some((t.rec.clone(), t.track.clone())),
                 None => return,
             },
-            Source::File(_) => None,
+            Source::File(_) | Source::Original => None,
         };
-        self.editor.counter += 1;
         // Rendu dans un fichier à part, puis renommé en piste du son s'il est toujours à jour.
         // Projet : `audio/edited/<banque>_<son>.wav` ; sinon un dossier temporaire.
         let final_path = match &self.workspace {
@@ -430,10 +504,10 @@ impl AppState {
             None => None,
         };
         let out = match &final_path {
-            Some(f) => f.with_extension(format!("part{}.wav", self.editor.counter)),
+            Some(f) => f.with_extension(format!("part{stamp}.wav")),
             None => std::env::temp_dir()
                 .join(format!("cxssm-edits-{}", std::process::id()))
-                .join(format!("{bank_name}_{}_{}.wav", sample.name, self.editor.counter)),
+                .join(format!("{bank_name}_{}_{stamp}.wav", sample.name)),
         };
         let dir = out.parent().map(PathBuf::from).unwrap_or_default();
         let lang = self.lang();
@@ -469,6 +543,10 @@ impl AppState {
                         }
                         (Source::File(path), _) => {
                             let g = gen::process_file(path, &sample, gain_db, pitch).map_err(|e| e.to_string())?;
+                            (g, String::new())
+                        }
+                        (Source::Original, _) => {
+                            let g = gen::process_original(codec, &sample, gain_db, pitch).map_err(|e| e.to_string())?;
                             (g, String::new())
                         }
                         _ => return Err("enregistrement absent".to_string()),
@@ -511,8 +589,65 @@ impl AppState {
         .detach();
     }
 
+    /// Sons touchés par un curseur : toute la sélection pour le volume et la hauteur,
+    /// seulement le son affiché pour le passage (propre à chaque son).
+    fn slider_targets(&self, r: SoundRef, slider: Slider) -> Vec<SoundRef> {
+        let sel = self.selected();
+        if slider == Slider::Passage || !sel.contains(&r) {
+            vec![r]
+        } else {
+            sel
+        }
+    }
+
+    /// Début du glisser d'un curseur.
+    pub fn begin_slide(&mut self, r: SoundRef, slider: Slider) {
+        let targets = self.slider_targets(r, slider);
+        let (fr, en) = slider_name(slider);
+        let (fr, en) = self.action_label(fr, en, targets.len());
+        self.checkpoint(fr, en);
+        self.ensure_edit(r);
+    }
+
+    /// Fin du glisser : la valeur du son affiché est appliquée à toute la sélection,
+    /// puis chaque son est rendu.
+    pub fn finish_slide(&mut self, slider: Slider, cx: &mut Context<Self>) {
+        let Some(r) = self.sound else { return };
+        let Some(e) = self.editor.edits.get(&r) else { return };
+        let (gain, semis) = (e.gain_db, e.semitones);
+        for t in self.slider_targets(r, slider) {
+            if t != r {
+                self.ensure_edit(t);
+                let Some(e) = self.editor.edits.get_mut(&t) else { continue };
+                match slider {
+                    Slider::Gain if e.gain_db != gain => e.gain_db = gain,
+                    Slider::Pitch if e.semitones != semis => e.semitones = semis,
+                    _ => continue,
+                }
+            }
+            self.render_edit(t, cx);
+        }
+    }
+
+    /// « Restaurer les originaux » : tous les sons sélectionnés.
+    pub fn restore_selected(&mut self, cx: &mut Context<Self>) {
+        let sel = self.selected();
+        let (fr, en) = self.action_label("Restaurer l'original", "Restore original", sel.len());
+        self.checkpoint(fr, en);
+        for r in sel {
+            self.forget_edit(r);
+            if let Some(p) = self.project.as_mut() {
+                p.clear_replacement(r);
+            }
+        }
+        self.refresh_modded_engine(cx);
+        self.project_changed(true);
+        cx.notify();
+    }
+
     /// Génère toutes les pistes de la voiture affichée depuis ses enregistrements.
     pub fn generate_car(&mut self, cx: &mut Context<Self>) {
+        self.checkpoint("Générer les pistes de la voiture", "Generate the car's tracks");
         let Some(map) = self.car_map() else { return };
         let mut sounds: Vec<SoundRef> = map.iter().map(|m| m.sound).collect();
         sounds.dedup();

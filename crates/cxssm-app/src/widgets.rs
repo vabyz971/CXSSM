@@ -31,11 +31,11 @@ pub fn button(id: impl Into<ElementId>) -> Stateful<Div> {
         .h(theme::CONTROL_H)
         .px(px(14.))
         .rounded(theme::RADIUS)
-        .bg(theme::BUTTON)
+        .bg(theme::button())
         .border_1()
-        .border_color(theme::BORDER)
+        .border_color(theme::border())
         .cursor_pointer()
-        .hover(|s| s.bg(theme::BUTTON_HOVER).border_color(theme::BORDER_HOVER))
+        .hover(|s| s.bg(theme::button_hover()).border_color(theme::border_hover()))
 }
 
 /// Bouton principal : fond accent, texte foncé, demi-gras.
@@ -50,8 +50,8 @@ pub fn primary(id: impl Into<ElementId>) -> Stateful<Div> {
         .h(theme::CONTROL_H)
         .px(px(16.))
         .rounded(theme::RADIUS)
-        .bg(theme::ACCENT)
-        .text_color(theme::ON_ACCENT)
+        .bg(theme::accent())
+        .text_color(theme::on_accent())
         .font_weight(FontWeight::SEMIBOLD)
         .cursor_pointer()
         .hover(|s| s.opacity(0.9))
@@ -67,7 +67,7 @@ pub fn ghost(id: impl Into<ElementId>) -> Stateful<Div> {
         .justify_center()
         .rounded(theme::RADIUS_SM)
         .cursor_pointer()
-        .hover(|s| s.bg(theme::HOVER))
+        .hover(|s| s.bg(theme::hover()))
 }
 
 /// Désactive visuellement un bouton (les clics sont ignorés par l'appelant).
@@ -89,7 +89,7 @@ pub fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
         .h(px(24.))
         .rounded(px(12.))
         .cursor_pointer()
-        .bg(if on { theme::ACCENT } else { theme::SWITCH_OFF })
+        .bg(if on { theme::accent() } else { theme::switch_off() })
         .child(
             div()
                 .absolute()
@@ -97,7 +97,7 @@ pub fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
                 .left(px(if on { 21. } else { 3. }))
                 .size(px(18.))
                 .rounded(px(9.))
-                .bg(if on { theme::ON_ACCENT } else { theme::TEXT }),
+                .bg(if on { theme::on_accent() } else { theme::text() }),
         )
 }
 
@@ -109,9 +109,9 @@ pub fn segmented() -> Div {
         .gap(px(3.))
         .p(px(3.))
         .rounded(theme::RADIUS_MD)
-        .bg(theme::INSET)
+        .bg(theme::inset())
         .border_1()
-        .border_color(theme::BORDER)
+        .border_color(theme::border())
 }
 
 pub fn segment(id: impl Into<ElementId>, label: impl Into<SharedString>, active: bool) -> Stateful<Div> {
@@ -124,9 +124,9 @@ pub fn segment(id: impl Into<ElementId>, label: impl Into<SharedString>, active:
         .rounded(theme::RADIUS_SM)
         .font_weight(FontWeight::MEDIUM)
         .cursor_pointer()
-        .bg(if active { theme::ACCENT } else { gpui::transparent_black().into() })
-        .text_color(if active { theme::ON_ACCENT } else { theme::TEXT_SOFT })
-        .when(!active, |d| d.hover(|s| s.bg(theme::HOVER)))
+        .bg(if active { theme::accent() } else { gpui::transparent_black().into() })
+        .text_color(if active { theme::on_accent() } else { theme::text_soft() })
+        .when(!active, |d| d.hover(|s| s.bg(theme::hover())))
         .child(label.into())
 }
 
@@ -144,9 +144,9 @@ pub fn path_field(text: impl Into<SharedString>) -> Div {
         .h(px(38.))
         .px(theme::GAP_MD)
         .rounded(theme::RADIUS)
-        .bg(theme::FIELD)
+        .bg(theme::field())
         .border_1()
-        .border_color(theme::BORDER)
+        .border_color(theme::border())
         .font_family(theme::FONT_MONO)
         .text_size(theme::TEXT_SM)
         .child(div().min_w(px(0.)).truncate().child(text.into()))
@@ -160,7 +160,7 @@ pub fn label_block(title: impl Into<SharedString>, hint: Option<SharedString>) -
         .gap(px(2.))
         .min_w(px(0.))
         .child(div().font_weight(FontWeight::SEMIBOLD).child(title.into()))
-        .when_some(hint, |d, h| d.child(div().text_color(theme::TEXT_DIM).child(h)))
+        .when_some(hint, |d, h| d.child(div().text_color(theme::text_dim()).child(h)))
 }
 
 /// Barre de défilement verticale pour une zone suivie par `handle`
@@ -194,8 +194,8 @@ pub fn scrollbar(id: &'static str, handle: &ScrollHandle, state: &Entity<AppStat
                     .top(gpui::relative(pos))
                     .h(gpui::relative(thumb))
                     .rounded(px(3.))
-                    .bg(if dragging { theme::ACCENT } else { theme::BORDER_STRONG })
-                    .hover(|s| s.bg(theme::BORDER_HOVER)),
+                    .bg(if dragging { theme::accent() } else { theme::border_strong() })
+                    .hover(|s| s.bg(theme::border_hover())),
             )
             .on_mouse_down(MouseButton::Left, move |e: &MouseDownEvent, _, cx| {
                 cx.stop_propagation();
@@ -239,9 +239,9 @@ pub fn strip(s: Strip, height: gpui::Pixels) -> Div {
         .w_full()
         .h(height)
         .rounded(theme::RADIUS_SM)
-        .bg(theme::STRIP)
+        .bg(theme::strip())
         .border_1()
-        .border_color(if s.lit { theme::ACCENT_EDGE } else { theme::DIVIDER })
+        .border_color(if s.lit { theme::accent_edge() } else { theme::divider() })
         .overflow_hidden()
         .child(canvas(|_, _, _| (), move |b, _, window, _| paint_strip(&s, b, window)).absolute().size_full())
 }
@@ -257,12 +257,12 @@ fn paint_strip(s: &Strip, b: Bounds<gpui::Pixels>, window: &mut Window) {
     // Repères 100 Hz, 1 kHz et 10 kHz.
     for hz in [100f32, 1_000., 10_000.] {
         let f = (hz / 30.).log2() / SPECTRUM_OCTAVES;
-        quad(window, x0 + w * f, top, px(1.), bottom - top, theme::DIVIDER);
+        quad(window, x0 + w * f, top, px(1.), bottom - top, theme::divider());
     }
 
     // Ligne centrale du miroir.
     let (cy, half) = ((top + bottom) / 2., (bottom - top) / 2.);
-    quad(window, x0, cy, w, px(1.), theme::DIVIDER);
+    quad(window, x0, cy, w, px(1.), theme::divider());
 
     if let Some(spec) = s.spectrum.as_ref().filter(|v| v.len() > 1) {
         let n = spec.len();
@@ -287,7 +287,7 @@ fn paint_strip(s: &Strip, b: Bounds<gpui::Pixels>, window: &mut Window) {
         area.line_to(rev[0]);
         trace(&mut area, &rev);
         area.close();
-        let (fill_c, line_c) = if s.lit { (theme::SPECTRUM_LIT, theme::ACCENT) } else { (theme::SPECTRUM_IDLE, theme::SPECTRUM_LINE) };
+        let (fill_c, line_c) = if s.lit { (theme::spectrum_lit(), theme::accent()) } else { (theme::spectrum_idle(), theme::spectrum_line()) };
         if let Ok(p) = area.build() {
             window.paint_path(p, fill_c);
         }
@@ -303,11 +303,11 @@ fn paint_strip(s: &Strip, b: Bounds<gpui::Pixels>, window: &mut Window) {
 
     if let Some(r) = &s.range {
         let y = b.origin.y + b.size.height - range_h;
-        quad(window, x0, y, w, range_h, theme::TRACK);
+        quad(window, x0, y, w, range_h, theme::track());
         let (a, z) = (r.band.0.clamp(0., 1.), r.band.1.clamp(0., 1.));
-        quad(window, x0 + w * a, y, w * (z - a), range_h, if s.lit { theme::ACCENT } else { theme::ACCENT_DIM });
+        quad(window, x0 + w * a, y, w * (z - a), range_h, if s.lit { theme::accent() } else { theme::accent_dim() });
         if let Some(head) = r.head {
-            quad(window, x0 + w * head.clamp(0., 1.) - px(1.), y - px(3.), px(2.), range_h + px(3.), theme::TEXT_BRIGHT);
+            quad(window, x0 + w * head.clamp(0., 1.) - px(1.), y - px(3.), px(2.), range_h + px(3.), theme::text_bright());
         }
     }
 }
@@ -357,7 +357,7 @@ pub fn slider(
         .w_full()
         .h(px(18.))
         .cursor_pointer()
-        .child(div().absolute().left_0().right_0().top(px(6.)).h(px(6.)).rounded(px(3.)).bg(theme::TRACK))
+        .child(div().absolute().left_0().right_0().top(px(6.)).h(px(6.)).rounded(px(3.)).bg(theme::track()))
         .child(
             div()
                 .absolute()
@@ -366,14 +366,38 @@ pub fn slider(
                 .left(gpui::relative(from))
                 .w(gpui::relative(to - from))
                 .rounded(px(3.))
-                .bg(theme::ACCENT),
+                .bg(theme::accent()),
         )
-        .when(centered, |d| d.child(div().absolute().top(px(3.)).h(px(12.)).w(px(1.)).left(gpui::relative(0.5)).bg(theme::BORDER_HOVER)))
+        .when(centered, |d| d.child(div().absolute().top(px(3.)).h(px(12.)).w(px(1.)).left(gpui::relative(0.5)).bg(theme::border_hover())))
         .child(
             div().absolute().top(px(2.)).left(gpui::relative(v)).w(px(0.)).child(
-                div().ml(px(-7.)).size(px(14.)).rounded(px(7.)).bg(theme::TEXT_BRIGHT).border_2().border_color(theme::ACCENT),
+                div().ml(px(-7.)).size(px(14.)).rounded(px(7.)).bg(theme::text_bright()).border_2().border_color(theme::accent()),
             ),
         )
         .child(canvas(move |b, _, _| track.set(b), |_, _, _, _| {}).absolute().size_full())
         .on_mouse_down(MouseButton::Left, on_down)
+}
+
+/// Bulle d'aide au survol (texte court).
+pub struct Tooltip(SharedString);
+
+impl Render for Tooltip {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+        div()
+            .px(theme::GAP_SM)
+            .py(px(5.))
+            .rounded(theme::RADIUS_SM)
+            .bg(theme::panel())
+            .border_1()
+            .border_color(theme::border_strong())
+            .text_size(theme::TEXT_SM)
+            .text_color(theme::text())
+            .child(self.0.clone())
+    }
+}
+
+/// Constructeur de bulle d'aide pour `.tooltip(…)`.
+pub fn tooltip(text: impl Into<SharedString>) -> impl Fn(&mut gpui::Window, &mut App) -> gpui::AnyView + 'static {
+    let text = text.into();
+    move |_, cx| cx.new(|_| Tooltip(text.clone())).into()
 }

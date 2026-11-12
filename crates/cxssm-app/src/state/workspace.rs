@@ -207,6 +207,7 @@ impl AppState {
             p.set_replacement(*r, file);
             if let Some(ed) = &e.edit {
                 let source = match &ed.source {
+                    ws::EditSource::Original => Source::Original,
                     ws::EditSource::File { path } => Source::File(w.abs(path)),
                     ws::EditSource::Recording { phase, rpm } => Source::Recording { phase: (*phase).into(), rpm: *rpm },
                 };
@@ -265,6 +266,7 @@ impl AppState {
                     let (bank, smp) = p.sample(*r)?;
                     let edit = self.editor.edits.get(r).map(|e| EditEntry {
                         source: match &e.source {
+                            Source::Original => ws::EditSource::Original,
                             Source::File(f) => ws::EditSource::File { path: w.rel(f) },
                             Source::Recording { phase, rpm } => ws::EditSource::Recording { phase: (*phase).into(), rpm: *rpm },
                         },

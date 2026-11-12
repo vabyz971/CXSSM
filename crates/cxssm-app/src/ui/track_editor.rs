@@ -7,7 +7,7 @@ use gpui::{div, prelude::*, px, Entity, FontWeight, MouseDownEvent, SharedString
 
 use crate::assets::{icon, Icon};
 use crate::state::editor::{GAIN_RANGE, PITCH_RANGE};
-use crate::state::{AppState, Drag, EditSource, Leaf, Phase, Playing, Slider};
+use crate::state::{AppState, Drag, EditSource, Leaf, Phase, Playing, Slider, SourceKind};
 use crate::theme;
 use crate::widgets::{button, disabled, fmt_int, ghost, mono, on, primary, segment, segmented, slider};
 
@@ -16,7 +16,7 @@ fn title(t: &'static str) -> gpui::Div {
 }
 
 fn hint(t: impl Into<SharedString>) -> gpui::Div {
-    div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child(t.into())
+    div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(t.into())
 }
 
 fn section() -> gpui::Div {
@@ -37,7 +37,7 @@ fn slider_row(s: &AppState, state: &Entity<AppState>, r: SoundRef, which: Slider
     let st = state.clone();
     let down = move |e: &MouseDownEvent, _: &mut gpui::Window, cx: &mut gpui::App| {
         st.update(cx, |s, cx| {
-            s.ensure_edit(r);
+            s.begin_slide(r, which);
             s.drag = Some(Drag::Slider(which));
             s.slide(which, e.position.x);
             cx.notify();
@@ -53,7 +53,7 @@ fn slider_row(s: &AppState, state: &Entity<AppState>, r: SoundRef, which: Slider
                 .items_center()
                 .justify_between()
                 .gap(theme::GAP_SM)
-                .child(div().text_color(theme::TEXT_DIM).child(label))
+                .child(div().text_color(theme::text_dim()).child(label))
                 .child(
                     div()
                         .flex()
@@ -63,7 +63,7 @@ fn slider_row(s: &AppState, state: &Entity<AppState>, r: SoundRef, which: Slider
                         .child(
                             ghost(SharedString::from(format!("{id}-reset")))
                                 .size(px(22.))
-                                .text_color(theme::TEXT_DIM)
+                                .text_color(theme::text_dim())
                                 .child("↺")
                                 .on_click(on(state, move |s, cx| s.reset_slider(r, which, cx))),
                         ),
@@ -101,7 +101,7 @@ fn recordings(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
                     .flex_1()
                     .min_w(px(0.))
                     .child(label)
-                    .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).truncate().child(detail)),
+                    .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).truncate().child(detail)),
             )
             .child(
                 button(id)
@@ -116,9 +116,9 @@ fn recordings(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
     section()
         .p(theme::GAP_MD)
         .rounded(theme::RADIUS)
-        .bg(theme::INSET)
+        .bg(theme::inset())
         .border_1()
-        .border_color(theme::BORDER)
+        .border_color(theme::border())
         .child(
             div()
                 .flex()
@@ -129,9 +129,9 @@ fn recordings(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
                     div()
                         .px(px(6.))
                         .rounded(theme::RADIUS_SM)
-                        .bg(theme::ACCENT_TINT)
+                        .bg(theme::accent_tint())
                         .text_size(theme::TEXT_XS)
-                        .text_color(theme::ACCENT)
+                        .text_color(theme::accent())
                         .child(s.t("EXPÉRIMENTAL", "EXPERIMENTAL")),
                 ),
         )
@@ -148,7 +148,108 @@ fn recordings(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
         )
 }
 
+/// Volume et hauteur du son affiché ; avec `all`, appliqués à toute la sélection.
+fn adjustments(s: &AppState, state: &Entity<AppState>, r: SoundRef, all: bool) -> gpui::Div {
+    let edit = s.editor.edits.get(&r);
+    let (gain, semis) = edit.map_or((0., 0.), |e| (e.gain_db, e.semitones));
+    let norm = |v: f32, (lo, hi): (f32, f32)| (v - lo) / (hi - lo);
+    section()
+        .child(title(s.t("Réglages", "Adjustments")))
+        .child(slider_row(s, state, r, Slider::Gain, s.t("Volume", "Volume"), Value(format!("{gain:+.1} dB"), norm(gain, GAIN_RANGE), true)))
+        .child(slider_row(
+            s,
+            state,
+            r,
+            Slider::Pitch,
+            s.t("Hauteur", "Pitch"),
+            Value(format!("{semis:+.1} {} (×{:.2})", s.t("demi-ton", "semitone"), (semis / 12.).exp2()), norm(semis, PITCH_RANGE), true),
+        ))
+        .child(hint(if all {
+            s.t(
+                "Les valeurs réglées ici remplacent celles de chaque son sélectionné. Chaque son garde sa source (original, fichier ou enregistrement).",
+                "The values set here replace those of every selected sound. Each sound keeps its source (original, file or recording).",
+            )
+        } else {
+            s.t(
+                "Appliqués au son lui-même : FMOD garde sa propre variation de hauteur selon le régime.",
+                "Applied to the sound itself: FMOD keeps its own RPM-driven pitch changes.",
+            )
+        }))
+}
+
+/// Plusieurs sons sélectionnés : leur liste, volume et hauteur communs, restauration.
+fn render_many(s: &AppState, state: &Entity<AppState>, r: SoundRef, sel: &[SoundRef]) -> gpui::Div {
+    const SHOWN: usize = 24;
+    let replaced = sel.iter().filter(|&&x| s.project.as_ref().is_some_and(|p| p.replacements.contains_key(&x))).count();
+    let rendering = sel.iter().filter(|x| s.editor.edits.get(x).is_some_and(|e| e.rendering())).count();
+    let chips = div().flex().flex_wrap().gap(px(6.)).children(sel.iter().take(SHOWN).map(|&x| {
+        let primary = x == r;
+        div()
+            .px(px(7.))
+            .py(px(2.))
+            .rounded(theme::RADIUS_SM)
+            .border_1()
+            .border_color(if primary { theme::accent() } else { theme::border() })
+            .bg(if primary { theme::accent_tint() } else { theme::inset() })
+            .font_family(theme::FONT_MONO)
+            .text_size(theme::TEXT_XS)
+            .child(s.sound_name(x))
+    }));
+    let more = sel.len().saturating_sub(SHOWN);
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(20.))
+        .child(
+            section()
+                .p(theme::GAP_MD)
+                .rounded(theme::RADIUS)
+                .bg(theme::inset())
+                .border_1()
+                .border_color(theme::border())
+                .child(title(s.t("Sélection", "Selection")))
+                .child(hint(s.tf(
+                    format!("{} sons, dont {replaced} déjà remplacé(s). Ctrl + clic pour en ajouter ou en retirer, Maj + clic pour une plage.", sel.len()),
+                    format!("{} sounds, {replaced} already replaced. Ctrl + click to add or remove, Shift + click for a range.", sel.len()),
+                )))
+                .child(chips)
+                .when(more > 0, |d| d.child(hint(s.tf(format!("et {more} autre(s)"), format!("and {more} more"))))),
+        )
+        .child(adjustments(s, state, r, true))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme::GAP_SM)
+                .when(rendering > 0, |d| {
+                    d.child(hint(s.tf(format!("Rendu de {rendering} son(s)…"), format!("Rendering {rendering} sound(s)…"))))
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(theme::GAP_SM)
+                        .child(
+                            disabled(button("restore-all").w_full().h(theme::BUTTON_H), replaced == 0)
+                                .child(s.tf(format!("Restaurer les originaux ({replaced})"), format!("Restore originals ({replaced})")))
+                                .when(replaced > 0, |b| b.on_click(on(state, |s, cx| s.restore_selected(cx)))),
+                        )
+                        .child(
+                            button("select-one")
+                                .w_full()
+                                .h(theme::BUTTON_H)
+                                .child(s.t("Garder ce son seul", "Keep this sound only"))
+                                .on_click(on(state, move |s, cx| s.select_sound(r, cx))),
+                        ),
+                ),
+        )
+}
+
 pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div {
+    let sel = s.selected();
+    if sel.len() > 1 {
+        return render_many(s, state, r, &sel);
+    }
     let Some(p) = &s.project else { return div() };
     let Some((bank, smp)) = p.sample(r) else { return div() };
     let lang = s.lang();
@@ -156,29 +257,31 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
     let replaced = !matches!(status, SoundStatus::Original);
     let edit = s.editor.edits.get(&r);
     let is_car = matches!(s.leaf, Some(Leaf::Car(_)));
-    let from_recording = matches!(edit.map(|e| &e.source), Some(EditSource::Recording { .. }));
-    let can_record = from_recording || s.can_use_recording(r);
+    let kind = s.source_kind(r);
+    let can_record = kind == SourceKind::Recording || s.can_use_recording(r);
     let playing_new = s.playback.playing == Some(Playing::Replacement(r));
     let rendering = edit.is_some_and(|e| e.rendering());
 
     // ── Source ──
-    let mut source = section().child(title(s.t("Source du son", "Sound source")));
-    if is_car {
-        source = source.child(
-            div().flex().child(
-                segmented()
-                    .child(
-                        segment("src-file", s.t("Fichier", "File"), !from_recording)
-                            .on_click(on(state, move |s, cx| s.set_edit_source(r, false, cx))),
+    let src = |id: &'static str, label: &'static str, k: SourceKind| {
+        segment(id, label, kind == k).on_click(on(state, move |s, cx| s.set_edit_source(r, k, cx)))
+    };
+    let source = section().child(title(s.t("Source du son", "Sound source"))).child(
+        div().flex().child(
+            segmented()
+                .child(src("src-orig", s.t("Original", "Original"), SourceKind::Original))
+                .child(src("src-file", s.t("Fichier", "File"), SourceKind::File))
+                .when(is_car, |d| {
+                    d.child(
+                        disabled(segment("src-rec", s.t("Enregistrement", "Recording"), kind == SourceKind::Recording), !can_record).when(
+                            can_record,
+                            |b| b.on_click(on(state, move |s, cx| s.set_edit_source(r, SourceKind::Recording, cx))),
+                        ),
                     )
-                    .child(
-                        disabled(segment("src-rec", s.t("Enregistrement", "Recording"), from_recording), !can_record)
-                            .when(can_record, |b| b.on_click(on(state, move |s, cx| s.set_edit_source(r, true, cx)))),
-                    ),
-            ),
-        );
-    }
-    match edit.map(|e| &e.source) {
+                }),
+        ),
+    );
+    let source = match edit.map(|e| &e.source) {
         Some(EditSource::Recording { phase, rpm }) => {
             let (phase, rpm) = (*phase, *rpm);
             let native = s.native_rpm(r);
@@ -188,7 +291,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
                 let ok = s.editor.take(ph).is_some();
                 disabled(segment(id, label, phase == ph), !ok).when(ok, |b| b.on_click(on(state, move |s, cx| s.set_edit_phase(r, ph, cx))))
             };
-            source = source
+            source
                 .child(
                     div().flex().child(
                         segmented()
@@ -201,7 +304,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
                         div()
                             .flex()
                             .justify_between()
-                            .child(div().text_color(theme::TEXT_DIM).child(s.t("Régime naturel du son", "Sound's natural RPM")))
+                            .child(div().text_color(theme::text_dim()).child(s.t("Régime naturel du son", "Sound's natural RPM")))
                             .child(mono(format!("{} {}", fmt_int(n, lang), s.t("tr/min", "rpm")))),
                     )
                 })
@@ -216,25 +319,29 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
                 .child(hint(s.t(
                     "Régime de l'enregistrement dont la boucle est tirée ; sa hauteur est ramenée au régime naturel.",
                     "RPM of the recording the loop is taken from; its pitch is brought to the natural RPM.",
-                )));
+                )))
         }
+        _ if kind == SourceKind::Original => source.child(hint(s.t(
+            "Le son du jeu, avec le volume et la hauteur réglés ci-dessous.",
+            "The game's own sound, with the volume and pitch set below.",
+        ))),
         _ => {
-            source = source
+            source
                 .child(
                     div()
                         .p(theme::GAP_MD)
                         .rounded(theme::RADIUS)
-                        .bg(theme::INSET)
+                        .bg(theme::inset())
                         .border_1()
-                        .border_color(if matches!(status, SoundStatus::Mismatch(..)) { theme::DANGER } else { theme::BORDER_HOVER })
-                        .text_color(theme::TEXT_ICON)
+                        .border_color(if matches!(status, SoundStatus::Mismatch(..)) { theme::danger() } else { theme::border_hover() })
+                        .text_color(theme::text_icon())
                         .child(super::side_panel::status_text(s, r))
                         .when_some(
                             match &status {
                                 SoundStatus::Mismatch(_, why) => Some(why.clone()),
                                 _ => None,
                             },
-                            |d, why| d.child(div().mt(px(6.)).text_size(theme::TEXT_SM).text_color(theme::DANGER).child(why)),
+                            |d, why| d.child(div().mt(px(6.)).text_size(theme::TEXT_SM).text_color(theme::danger()).child(why)),
                         ),
                 )
                 .child(
@@ -242,28 +349,12 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
                         .h(theme::BUTTON_H)
                         .child(s.t("Choisir un fichier…", "Choose a file…"))
                         .on_click(on(state, move |s, cx| s.pick_replacement(r, cx))),
-                );
+                )
         }
-    }
+    };
 
     // ── Réglages ──
-    let (gain, semis) = edit.map_or((0., 0.), |e| (e.gain_db, e.semitones));
-    let norm = |v: f32, (lo, hi): (f32, f32)| (v - lo) / (hi - lo);
-    let settings = section()
-        .child(title(s.t("Réglages", "Adjustments")))
-        .child(slider_row(s, state, r, Slider::Gain, s.t("Volume", "Volume"), Value(format!("{gain:+.1} dB"), norm(gain, GAIN_RANGE), true)))
-        .child(slider_row(
-            s,
-            state,
-            r,
-            Slider::Pitch,
-            s.t("Hauteur", "Pitch"),
-            Value(format!("{semis:+.1} {} (×{:.2})", s.t("demi-ton", "semitone"), (semis / 12.).exp2()), norm(semis, PITCH_RANGE), true),
-        ))
-        .child(hint(s.t(
-            "Appliqués au son lui-même : FMOD garde sa propre variation de hauteur selon le régime.",
-            "Applied to the sound itself: FMOD keeps its own RPM-driven pitch changes.",
-        )));
+    let settings = adjustments(s, state, r, false);
 
     // ── Résultat ──
     let note = edit.and_then(|e| e.note.clone());
@@ -274,7 +365,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
         .when(rendering, |d| d.child(hint(s.t("Rendu du son…", "Rendering the sound…"))))
         .when_some(note, |d, n| match n {
             Ok(t) => d.child(hint(t)),
-            Err(e) => d.child(div().text_size(theme::TEXT_SM).text_color(theme::DANGER).child(e)),
+            Err(e) => d.child(div().text_size(theme::TEXT_SM).text_color(theme::danger()).child(e)),
         })
         .child(
             div()
@@ -282,7 +373,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
                 .gap(theme::GAP_SM)
                 .child(
                     disabled(button("play-new").flex_1().h(theme::BUTTON_H), !replaced)
-                        .child(icon(if playing_new { Icon::Stop } else { Icon::Play }, px(12.), theme::TEXT))
+                        .child(icon(if playing_new { Icon::Stop } else { Icon::Play }, px(12.), theme::text()))
                         .child(if playing_new { s.t("Arrêter", "Stop") } else { s.t("Écouter", "Play") })
                         .when(replaced, |b| b.on_click(on(state, move |s, cx| s.toggle_replacement(r, cx)))),
                 )
@@ -299,7 +390,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
             .flex()
             .justify_between()
             .gap(theme::GAP_MD)
-            .child(div().text_color(theme::TEXT_DIM).child(k))
+            .child(div().text_color(theme::text_dim()).child(k))
             .child(div().font_family(theme::FONT_MONO).child(v))
     };
     let format = section()

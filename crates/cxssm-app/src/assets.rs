@@ -20,10 +20,12 @@ pub enum Icon {
     PanelCollapse,
     PanelExpand,
     Check,
+    Undo,
+    Redo,
 }
 
 impl Icon {
-    const ALL: [Icon; 13] = [
+    const ALL: [Icon; 15] = [
         Icon::Logo,
         Icon::Gear,
         Icon::Folder,
@@ -37,6 +39,8 @@ impl Icon {
         Icon::PanelCollapse,
         Icon::PanelExpand,
         Icon::Check,
+        Icon::Undo,
+        Icon::Redo,
     ];
 
     fn name(self) -> &'static str {
@@ -54,6 +58,8 @@ impl Icon {
             Icon::PanelCollapse => "panel-collapse",
             Icon::PanelExpand => "panel-expand",
             Icon::Check => "check",
+            Icon::Undo => "undo",
+            Icon::Redo => "redo",
         }
     }
 
@@ -80,6 +86,8 @@ impl Icon {
             Icon::PanelCollapse => r##"<rect stroke-width="2" x="3" y="4" width="18" height="16" rx="2"/><path stroke-width="2" d="M15 4v16M9 10l2 2-2 2"/>"##,
             Icon::PanelExpand => r##"<rect stroke-width="2" x="3" y="4" width="18" height="16" rx="2"/><path stroke-width="2" d="M15 4v16M11 10l-2 2 2 2"/>"##,
             Icon::Check => r##"<path stroke-width="2.8" d="M5 12l5 5 9-10"/>"##,
+            Icon::Undo => r##"<path stroke-width="2.2" d="M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>"##,
+            Icon::Redo => r##"<path stroke-width="2.2" d="M15 14l5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>"##,
         }
     }
 

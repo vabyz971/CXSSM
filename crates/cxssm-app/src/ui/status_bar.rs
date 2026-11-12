@@ -27,11 +27,11 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
         .gap(theme::GAP_LG)
         .px(theme::APPBAR_PAD_X)
         .py(theme::STATUSBAR_PAD_Y)
-        .bg(theme::BAR)
+        .bg(theme::bar())
         .border_t_1()
-        .border_color(theme::DIVIDER)
+        .border_color(theme::divider())
         .text_size(theme::TEXT_SM)
-        .text_color(theme::TEXT_DIM)
+        .text_color(theme::text_dim())
         .child(
             div()
                 .flex_1()
@@ -50,7 +50,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
                 .child(source),
         )
         .child(div().id("status-fmod").flex_1().min_w(px(0.)).truncate().text_right()
-            .when(s.fmod.is_none(), |d| d.text_color(theme::ACCENT).cursor_pointer().on_click(on(state, |s, cx| s.set_fmod_help(true, cx))))
+            .when(s.fmod.is_none(), |d| d.text_color(theme::accent()).cursor_pointer().on_click(on(state, |s, cx| s.set_fmod_help(true, cx))))
             .child(s.tf(
             format!("{replaced} son(s) remplacé(s)  ·  {encoder}"),
             format!("{replaced} replaced sound(s)  ·  {encoder}"),

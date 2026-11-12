@@ -11,7 +11,7 @@ use gpui::{
 
 use crate::assets::{icon, Icon};
 use crate::state::engine::LIMITER_STEP;
-use crate::state::{AppState, Drag};
+use crate::state::{AppState, Drag, Shortcut};
 use crate::theme;
 use crate::widgets::{button, fmt_int, ghost, mono};
 
@@ -35,9 +35,9 @@ impl RpmSimulator {
             .px(px(20.))
             .py(theme::GAP_LG)
             .rounded(theme::RADIUS_LG)
-            .bg(theme::PANEL)
+            .bg(theme::panel())
             .border_1()
-            .border_color(theme::DIVIDER)
+            .border_color(theme::divider())
     }
 
     /// Jauge réglable à la souris : ses dimensions sont mémorisées pour le glisser.
@@ -58,7 +58,7 @@ impl RpmSimulator {
             .w_full()
             .h(height)
             .rounded(height / 2.)
-            .bg(theme::TRACK)
+            .bg(theme::track())
             .overflow_hidden()
             .cursor_pointer()
             .child(div().h_full().rounded(height / 2.).w(relative(value.clamp(0., 1.))).bg(fill))
@@ -81,7 +81,7 @@ fn tick(left: f32, label: SharedString) -> impl IntoElement {
             .text_center()
             .font_family(theme::FONT_MONO)
             .text_size(theme::TEXT_XS)
-            .text_color(theme::TEXT_FAINT)
+            .text_color(theme::text_faint())
             .child(label),
     )
 }
@@ -97,7 +97,7 @@ impl Render for RpmSimulator {
             return Self::card()
                 .items_center()
                 .justify_between()
-                .child(div().flex_1().min_w(px(0.)).text_color(theme::TEXT_DIM).child(err.clone()))
+                .child(div().flex_1().min_w(px(0.)).text_color(theme::text_dim()).child(err.clone()))
                 .when(missing, |d| {
                     d.child(
                         crate::widgets::primary("fmod-howto")
@@ -134,9 +134,9 @@ impl Render for RpmSimulator {
                             .text_size(theme::TEXT_RPM)
                             .font_weight(FontWeight::SEMIBOLD)
                             .line_height(relative(1.))
-                            .text_color(if limiting { theme::ACCENT } else { theme::TEXT }),
+                            .text_color(if limiting { theme::accent() } else { theme::text() }),
                     )
-                    .child(div().text_color(theme::TEXT_DIM).child(s.t("tr/min", "rpm"))),
+                    .child(div().text_color(theme::text_dim()).child(s.t("tr/min", "rpm"))),
             )
             .child(
                 div()
@@ -144,9 +144,9 @@ impl Render for RpmSimulator {
                     .gap(theme::GAP_XS)
                     .mt(theme::GAP_SM)
                     .text_size(theme::TEXT_SM)
-                    .text_color(theme::TEXT_DIM)
+                    .text_color(theme::text_dim())
                     .child(s.t("Charge", "Load"))
-                    .child(mono(format!("{load_pct:.0} %")).text_color(theme::TEXT)),
+                    .child(mono(format!("{load_pct:.0} %")).text_color(theme::text())),
             );
 
         // ── Compte-tours, graduations, charge et rupteur ──
@@ -162,7 +162,7 @@ impl Render for RpmSimulator {
             r += 1000.;
         }
         let tach = self
-            .gauge("tach", &e.rpm_track, Drag::Rpm, px(14.), theme::ACCENT, e.rpm / max)
+            .gauge("tach", &e.rpm_track, Drag::Rpm, px(14.), theme::accent(), e.rpm / max)
             .when(limiter_on, |d| {
                 d.child(
                     div()
@@ -171,7 +171,7 @@ impl Render for RpmSimulator {
                         .h_full()
                         .w(px(2.))
                         .left(relative((e.limiter / max).clamp(0., 1.)))
-                        .bg(theme::TEXT_BRIGHT),
+                        .bg(theme::text_bright()),
                 )
             });
         let limiter = if limiter_on {
@@ -183,15 +183,15 @@ impl Render for RpmSimulator {
                 .child(
                     ghost("limiter-down")
                         .size(px(20.))
-                        .text_color(theme::TEXT_SOFT)
+                        .text_color(theme::text_soft())
                         .child("−")
                         .on_click(crate::widgets::on(&self.state, |s, cx| s.adjust_limiter(-LIMITER_STEP, cx))),
                 )
-                .child(mono(fmt_int(e.limiter, lang)).text_color(theme::TEXT))
+                .child(mono(fmt_int(e.limiter, lang)).text_color(theme::text()))
                 .child(
                     ghost("limiter-up")
                         .size(px(20.))
-                        .text_color(theme::TEXT_SOFT)
+                        .text_color(theme::text_soft())
                         .child("+")
                         .on_click(crate::widgets::on(&self.state, |s, cx| s.adjust_limiter(LIMITER_STEP, cx))),
                 )
@@ -214,14 +214,14 @@ impl Render for RpmSimulator {
                     .items_center()
                     .gap(px(10.))
                     .text_size(theme::TEXT_SM)
-                    .text_color(theme::TEXT_DIM)
+                    .text_color(theme::text_dim())
                     .child(div().w(px(56.)).child(s.t("Charge", "Load")))
                     .child(div().flex_1().child(self.gauge(
                         "load",
                         &e.load_track,
                         Drag::Load,
                         px(6.),
-                        theme::TEXT,
+                        theme::text(),
                         e.load,
                     ))),
             )
@@ -231,7 +231,7 @@ impl Render for RpmSimulator {
                     .items_center()
                     .gap(px(10.))
                     .text_size(theme::TEXT_SM)
-                    .text_color(theme::TEXT_DIM)
+                    .text_color(theme::text_dim())
                     .child(limiter),
             );
 
@@ -247,14 +247,18 @@ impl Render for RpmSimulator {
             .h(px(52.))
             .rounded(px(10.))
             .border_1()
-            .border_color(theme::ACCENT)
-            .bg(if holding { theme::ACCENT } else { theme::ACCENT_TINT })
-            .text_color(if holding { theme::ON_ACCENT } else { theme::ACCENT })
+            .border_color(theme::accent())
+            .bg(if holding { theme::accent() } else { theme::accent_tint() })
+            .text_color(if holding { theme::on_accent() } else { theme::accent() })
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(px(14.))
             .cursor_pointer()
-            .child(icon(Icon::ArrowUp, px(18.), if holding { theme::ON_ACCENT } else { theme::ACCENT }))
+            .child(icon(Icon::ArrowUp, px(18.), if holding { theme::on_accent() } else { theme::accent() }))
             .child(s.t("Maintenir pour accélérer", "Hold to accelerate"))
+            .tooltip(crate::widgets::tooltip(s.tf(
+                format!("Raccourci : {} (maintenir)", s.shortcut_text(Shortcut::Throttle)),
+                format!("Shortcut: {} (hold)", s.shortcut_text(Shortcut::Throttle)),
+            )))
             .on_mouse_down(MouseButton::Left, move |_, _, cx| st.update(cx, |s, cx| s.press_throttle(cx)));
 
         let engine_label = if e.starting {
@@ -281,8 +285,12 @@ impl Render for RpmSimulator {
                             .px(px(8.))
                             .text_size(theme::TEXT_SM)
                             .h(theme::BUTTON_H)
-                            .child(icon(if running { Icon::Stop } else { Icon::Play }, px(12.), theme::TEXT))
+                            .child(icon(if running { Icon::Stop } else { Icon::Play }, px(12.), theme::text()))
                             .child(engine_label)
+                            .tooltip(crate::widgets::tooltip(s.tf(
+                                format!("Raccourci : {}", s.shortcut_text(Shortcut::Engine)),
+                                format!("Shortcut: {}", s.shortcut_text(Shortcut::Engine)),
+                            )))
                             .on_click(crate::widgets::on(&self.state, |s, cx| s.toggle_engine(cx))),
                     )
                     .child(
@@ -291,12 +299,16 @@ impl Render for RpmSimulator {
                             .px(px(8.))
                             .text_size(theme::TEXT_SM)
                             .h(theme::BUTTON_H)
-                            .when(e.sweeping, |b| b.border_color(theme::ACCENT).text_color(theme::ACCENT))
+                            .when(e.sweeping, |b| b.border_color(theme::accent()).text_color(theme::accent()))
                             .child(if limiter_on {
                                 s.t("Balayer 0 → limiteur", "Sweep 0 → limiter")
                             } else {
                                 s.t("Balayer 0 → max", "Sweep 0 → max")
                             })
+                            .tooltip(crate::widgets::tooltip(s.tf(
+                                format!("Raccourci : {}", s.shortcut_text(Shortcut::Sweep)),
+                                format!("Shortcut: {}", s.shortcut_text(Shortcut::Sweep)),
+                            )))
                             .on_click(crate::widgets::on(&self.state, |s, cx| s.start_sweep(cx))),
                     ),
             );

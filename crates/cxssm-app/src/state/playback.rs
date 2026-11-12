@@ -71,7 +71,10 @@ impl Playback {
 impl AppState {
     /// ▶ / ■ sur un son d'origine du jeu.
     pub fn toggle_original(&mut self, r: SoundRef, cx: &mut Context<Self>) {
-        self.sound = Some(r);
+        if !self.is_selected(r) {
+            self.sound = Some(r);
+            self.selection = vec![r];
+        }
         if self.playback.playing == Some(Playing::Original(r)) {
             self.stop(cx);
             return;

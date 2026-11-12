@@ -108,6 +108,8 @@ pub struct EditEntry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum EditSource {
+    /// Son d'origine du jeu (volume et hauteur modifiés).
+    Original,
     /// Fichier importé (chemin relatif au projet).
     File { path: String },
     /// Passage d'un enregistrement de la voiture.
@@ -267,9 +269,21 @@ impl Workspace {
             return Ok(src.to_path_buf());
         }
         let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "wav".into());
-        let dst = self.folder(Folder::Imported).join(format!("{}.{ext}", Self::sound_stem(bank, sample)));
-        copy_atomic(src, &dst)?;
-        Ok(dst)
+        let stem = Self::sound_stem(bank, sample);
+        // Un import précédent du même son est gardé (annuler doit pouvoir y revenir) :
+        // `<son>.wav`, puis `<son>-2.wav`… ; un fichier identique est réutilisé.
+        for n in 1.. {
+            let name = if n == 1 { format!("{stem}.{ext}") } else { format!("{stem}-{n}.{ext}") };
+            let dst = self.folder(Folder::Imported).join(name);
+            if !dst.exists() {
+                copy_atomic(src, &dst)?;
+                return Ok(dst);
+            }
+            if same_file_content(src, &dst) {
+                return Ok(dst);
+            }
+        }
+        unreachable!("boucle infinie")
     }
 
     /// Piste rendue par l'éditeur pour ce son.
@@ -463,6 +477,13 @@ mod tests {
         assert_eq!(ws.abs("audio/imported/Flat_sample_0007.wav"), imported);
         assert_eq!(ws.abs("../../etc/passwd"), ws.dir.join("etc/passwd"));
         assert_eq!(ws.import(&imported, "Flat", "x").unwrap(), imported);
+        // Même fichier : réutilisé ; autre fichier : copié à côté, l'ancien est gardé.
+        assert_eq!(ws.import(&wav, "Flat", "sample/0007").unwrap(), imported);
+        let other = root.join("autre.wav");
+        std::fs::write(&other, b"RIFF2").unwrap();
+        let second = ws.import(&other, "Flat", "sample/0007").unwrap();
+        assert_eq!(second, ws.folder(Folder::Imported).join("Flat_sample_0007-2.wav"));
+        assert_eq!(std::fs::read(&imported).unwrap(), b"RIFF");
 
         let mut ws = ws;
         ws.manifest.sounds.push(SoundEntry {

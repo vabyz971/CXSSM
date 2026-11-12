@@ -33,10 +33,10 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |_, cx| {
+            |window, cx| {
                 // État partagé, puis la vue racine qui assemble les composants.
                 let state = cx.new(|cx| state::AppState::new(cx, initial));
-                cx.new(|cx| ui::Workspace::new(state, cx))
+                cx.new(|cx| ui::Workspace::new(state, window, cx))
             },
         )
         .expect("ouverture de la fenêtre");

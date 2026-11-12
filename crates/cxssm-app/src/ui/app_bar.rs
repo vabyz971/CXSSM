@@ -5,9 +5,9 @@ use cxssm_core::workspace::GameState;
 use gpui::{div, prelude::*, px, Entity, FontWeight, Rgba};
 
 use crate::assets::{icon, icon_sm, Icon};
-use crate::state::AppState;
+use crate::state::{AppState, Shortcut};
 use crate::theme;
-use crate::widgets::{button, on, primary};
+use crate::widgets::{button, disabled, ghost, on, primary, tooltip};
 
 /// Pastille : nombre de sons remplacés.
 fn badge(n: usize) -> impl IntoElement {
@@ -19,8 +19,8 @@ fn badge(n: usize) -> impl IntoElement {
         .h(px(18.))
         .px(px(5.))
         .rounded(px(9.))
-        .bg(theme::ON_ACCENT)
-        .text_color(theme::ACCENT)
+        .bg(theme::on_accent())
+        .text_color(theme::accent())
         .font_family(theme::FONT_MONO)
         .text_size(theme::TEXT_XS)
         .child(n.to_string())
@@ -29,14 +29,23 @@ fn badge(n: usize) -> impl IntoElement {
 /// Couleur du point d'état du jeu (installé, à installer, à surveiller).
 pub fn game_dot(s: &AppState) -> Rgba {
     match s.game_state {
-        Some(GameState::Installed) if !s.mod_stale() => theme::ACCENT,
-        Some(GameState::Updated | GameState::Modified | GameState::Missing) => theme::DANGER,
-        _ => theme::TEXT_DISABLED,
+        Some(GameState::Installed) if !s.mod_stale() => theme::accent(),
+        Some(GameState::Updated | GameState::Modified | GameState::Missing) => theme::danger(),
+        _ => theme::text_disabled(),
     }
 }
 
 pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
     let replaced = s.replaced_count();
+    let (undo_key, redo_key) = (s.shortcut_text(Shortcut::Undo), s.shortcut_text(Shortcut::Redo));
+    let undo_tip = match s.history.undo_label() {
+        Some((fr, en)) => s.tf(format!("Annuler : {fr} ({undo_key})"), format!("Undo: {en} ({undo_key})")),
+        None => s.t("Rien à annuler", "Nothing to undo").to_string(),
+    };
+    let redo_tip = match s.history.redo_label() {
+        Some((fr, en)) => s.tf(format!("Rétablir : {fr} ({redo_key})"), format!("Redo: {en} ({redo_key})")),
+        None => s.t("Rien à rétablir", "Nothing to redo").to_string(),
+    };
     let brand = div()
         .flex()
         .items_center()
@@ -50,19 +59,19 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
                 .justify_center()
                 .size(px(28.))
                 .rounded(px(7.))
-                .bg(theme::ACCENT)
-                .child(icon(Icon::Logo, px(18.), theme::ON_ACCENT)),
+                .bg(theme::accent())
+                .child(icon(Icon::Logo, px(18.), theme::on_accent())),
         )
         .child(div().flex_none().text_size(theme::TEXT_LG).font_weight(FontWeight::SEMIBOLD).child("CXSSM"))
         .when_some(s.project_name(), |d, name| {
-            d.child(div().text_color(theme::TEXT_DISABLED).child("/")).child(
+            d.child(div().text_color(theme::text_disabled()).child("/")).child(
                 div()
                     .id("project-name")
                     .min_w(px(0.))
                     .truncate()
                     .font_weight(FontWeight::MEDIUM)
                     .cursor_pointer()
-                    .hover(|d| d.text_color(theme::ACCENT))
+                    .hover(|d| d.text_color(theme::accent()))
                     .child(name.to_string())
                     .on_click(on(state, |s, cx| s.set_project_dialog(true, cx))),
             )
@@ -70,13 +79,13 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
 
     let main_action = if s.workspace.is_some() {
         primary("install")
-            .child(icon_sm(Icon::Download, theme::ON_ACCENT))
+            .child(icon_sm(Icon::Download, theme::on_accent()))
             .child(s.t("Installer dans le jeu", "Install in the game"))
             .child(badge(replaced))
             .on_click(on(state, |s, cx| s.install_into_game(cx)))
     } else {
         primary("export")
-            .child(icon_sm(Icon::Download, theme::ON_ACCENT))
+            .child(icon_sm(Icon::Download, theme::on_accent()))
             .child(s.t("Exporter le mod", "Export mod"))
             .child(badge(replaced))
             .on_click(on(state, |s, cx| s.export_mod(cx)))
@@ -90,9 +99,9 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
         .gap(theme::GAP_LG)
         .px(theme::APPBAR_PAD_X)
         .py(theme::APPBAR_PAD_Y)
-        .bg(theme::BAR)
+        .bg(theme::bar())
         .border_b_1()
-        .border_color(theme::DIVIDER)
+        .border_color(theme::divider())
         .child(brand)
         .child(
             div()
@@ -101,8 +110,21 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
                 .items_center()
                 .gap(theme::GAP_SM)
                 .child(
+                    disabled(ghost("undo").size(px(34.)), !s.history.can_undo())
+                        .child(icon(Icon::Undo, px(17.), theme::text_icon()))
+                        .tooltip(tooltip(undo_tip))
+                        .when(s.history.can_undo(), |b| b.on_click(on(state, |s, cx| s.undo(cx)))),
+                )
+                .child(
+                    disabled(ghost("redo").size(px(34.)), !s.history.can_redo())
+                        .child(icon(Icon::Redo, px(17.), theme::text_icon()))
+                        .tooltip(tooltip(redo_tip))
+                        .when(s.history.can_redo(), |b| b.on_click(on(state, |s, cx| s.redo(cx)))),
+                )
+                .child(div().w(px(1.)).h(px(20.)).mx(px(4.)).bg(theme::divider()))
+                .child(
                     button("prefs")
-                        .child(icon_sm(Icon::Gear, theme::TEXT))
+                        .child(icon_sm(Icon::Gear, theme::text()))
                         .child(s.t("Préférences", "Preferences"))
                         .on_click(on(state, |s, cx| s.open_preferences(None, cx))),
                 )
@@ -113,7 +135,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
                 )
                 .child(
                     button("open")
-                        .child(icon_sm(Icon::Folder, theme::TEXT))
+                        .child(icon_sm(Icon::Folder, theme::text()))
                         .child(s.t("Ouvrir", "Open"))
                         .on_click(on(state, |s, cx| s.open_file_dialog(cx))),
                 )

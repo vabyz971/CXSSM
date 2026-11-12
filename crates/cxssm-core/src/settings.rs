@@ -37,6 +37,48 @@ impl Language {
     }
 }
 
+/// Thème de l'interface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    #[default]
+    Dark,
+    Light,
+}
+
+/// Raccourcis clavier : `[ctrl-][alt-][shift-][cmd-]touche`, touche telle que reçue du
+/// clavier (`z`, `e`, `space`…). Une chaîne vide désactive le raccourci.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Shortcuts {
+    pub undo: String,
+    pub redo: String,
+    pub select_all: String,
+    /// Démarrer / arrêter le moteur du simulateur.
+    pub engine: String,
+    /// Balayage du ralenti au rupteur.
+    pub sweep: String,
+    /// Accélérateur (maintenu).
+    pub throttle: String,
+}
+
+impl Default for Shortcuts {
+    fn default() -> Self {
+        let m = if cfg!(target_os = "macos") { "cmd" } else { "ctrl" };
+        Self {
+            undo: format!("{m}-z"),
+            redo: format!("{m}-shift-z"),
+            select_all: format!("{m}-a"),
+            engine: "e".into(),
+            sweep: "s".into(),
+            throttle: "space".into(),
+        }
+    }
+}
+
+/// Couleur d'accentuation par défaut (ambre).
+pub const DEFAULT_ACCENT: u32 = 0xF5B800;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -55,6 +97,11 @@ pub struct Settings {
     pub check_updates: bool,
     /// Dernier projet `.cxssm` ouvert (rouvert au démarrage, avant le bundle du jeu).
     pub last_project: Option<PathBuf>,
+    /// Thème clair ou sombre.
+    pub theme: ThemeMode,
+    /// Couleur d'accentuation, `#RRGGBB`.
+    pub accent: String,
+    pub shortcuts: Shortcuts,
 }
 
 impl Default for Settings {
@@ -68,6 +115,9 @@ impl Default for Settings {
             fmod_dir: None,
             check_updates: true,
             last_project: None,
+            theme: ThemeMode::Dark,
+            accent: format_hex(DEFAULT_ACCENT),
+            shortcuts: Shortcuts::default(),
         }
     }
 }
@@ -96,6 +146,15 @@ impl Settings {
         }
         let text = toml::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(path, text)
+    }
+
+    /// Couleur d'accentuation (`0xRRGGBB`) ; l'ambre par défaut si le réglage est invalide.
+    pub fn accent_rgb(&self) -> u32 {
+        parse_hex(&self.accent).unwrap_or(DEFAULT_ACCENT)
+    }
+
+    pub fn set_accent(&mut self, rgb: u32) {
+        self.accent = format_hex(rgb);
     }
 
     /// Installation FMOD à utiliser (variables d'environnement, préférences, détection).
@@ -136,6 +195,16 @@ impl Settings {
     }
 }
 
+/// `#RRGGBB` (ou `RRGGBB`) → `0xRRGGBB`.
+pub fn parse_hex(s: &str) -> Option<u32> {
+    let h = s.trim().trim_start_matches('#');
+    (h.len() == 6).then(|| u32::from_str_radix(h, 16).ok()).flatten()
+}
+
+pub fn format_hex(rgb: u32) -> String {
+    format!("#{:06X}", rgb & 0xFF_FFFF)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +219,27 @@ mod tests {
         // Champs manquants → valeurs par défaut.
         let partial: Settings = toml::from_str("language = \"fr\"").unwrap();
         assert!(partial.rpm_limiter && partial.auto_open);
+        assert_eq!((partial.theme, partial.accent_rgb()), (ThemeMode::Dark, DEFAULT_ACCENT));
+        assert_eq!(partial.shortcuts, Shortcuts::default());
+        // Un raccourci modifié est relu ; les autres gardent leur valeur par défaut.
+        let custom: Settings = toml::from_str("[shortcuts]\nundo = \"ctrl-w\"\n").unwrap();
+        assert_eq!((custom.shortcuts.undo.as_str(), custom.shortcuts.throttle.as_str()), ("ctrl-w", "space"));
+    }
+
+    #[test]
+    fn accent_hex() {
+        let mut s = Settings { theme: ThemeMode::Light, ..Default::default() };
+        s.set_accent(0x3D8BFF);
+        assert_eq!(s.accent, "#3D8BFF");
+        let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
+        assert_eq!((back.theme, back.accent_rgb()), (ThemeMode::Light, 0x3D8BFF));
+        assert_eq!(parse_hex("22c3e6"), Some(0x22C3E6));
+        assert_eq!(parse_hex("#12345"), None);
+        // Fichier écrit à la main, clés du thème en tête.
+        let file: Settings = toml::from_str("theme = \"light\"\naccent = \"#3D8BFF\"\nlanguage = \"fr\"\nrpm_limiter = true\n").unwrap();
+        assert_eq!((file.theme, file.accent_rgb(), file.language), (ThemeMode::Light, 0x3D8BFF, Language::Fr));
+        s.accent = "rouge".into();
+        assert_eq!(s.accent_rgb(), DEFAULT_ACCENT);
     }
 
     #[test]

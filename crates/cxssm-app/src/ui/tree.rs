@@ -41,6 +41,8 @@ enum Row {
         expanded: Option<bool>,
         selected: bool,
         disabled: bool,
+        /// Contient des sons remplacés : point de couleur et son explication.
+        modified: Option<SharedString>,
         action: Action,
     },
     Note(SharedString),
@@ -61,6 +63,8 @@ impl Tree {
             return rows;
         }
 
+        let car_tip: SharedString = s.t("Voiture modifiée : au moins un de ses sons est remplacé", "Modified car: at least one of its sounds is replaced").into();
+        let bank_tip: SharedString = s.t("Contient des sons remplacés", "Contains replaced sounds").into();
         for cat in CATEGORIES {
             if s.settings.is_hidden(cat) {
                 continue;
@@ -89,6 +93,7 @@ impl Tree {
                         expanded: Some(group_open),
                         selected: false,
                         disabled: false,
+                        modified: s.bank_modified(bank).then(|| bank_tip.clone()),
                         action: Action::Toggle(TreeKey::Group(cat, bank)),
                     });
                     if group_open {
@@ -100,6 +105,7 @@ impl Tree {
                                 expanded: None,
                                 selected: s.leaf == Some(Leaf::Car(i)),
                                 disabled: false,
+                                modified: s.car_modified(i).then(|| car_tip.clone()),
                                 action: Action::Select(Leaf::Car(i)),
                             });
                         }
@@ -125,6 +131,7 @@ impl Tree {
                         expanded: None,
                         selected: s.leaf == Some(Leaf::Bank(cat, bank)),
                         disabled: false,
+                        modified: s.bank_modified(bank).then(|| bank_tip.clone()),
                         action: Action::Select(Leaf::Bank(cat, bank)),
                     });
                 }
@@ -142,6 +149,7 @@ impl Tree {
                 expanded: (count > 0).then_some(expanded),
                 selected: false,
                 disabled: count == 0,
+                modified: None,
                 action: if count > 0 { Action::Toggle(TreeKey::Category(cat)) } else { Action::None },
             });
             if expanded {
@@ -162,24 +170,24 @@ impl Tree {
                 .pt(px(6.))
                 .pb(theme::GAP_SM)
                 .text_size(theme::TEXT_SM)
-                .text_color(theme::TEXT_FAINT)
+                .text_color(theme::text_faint())
                 .child(text)
                 .into_any_element(),
-            Row::Node { label, count, level, expanded, selected, disabled, action } => {
+            Row::Node { label, count, level, expanded, selected, disabled, modified, action } => {
                 let pad = match level {
                     Level::Category => 10.,
                     Level::Group => 28.,
                     Level::Item => 52.,
                 };
                 let (color, weight) = if disabled {
-                    (theme::TEXT_DISABLED, FontWeight::MEDIUM)
+                    (theme::text_disabled(), FontWeight::MEDIUM)
                 } else if selected {
-                    (theme::TEXT_BRIGHT, FontWeight::SEMIBOLD)
+                    (theme::text_bright(), FontWeight::SEMIBOLD)
                 } else {
                     match level {
-                        Level::Category => (theme::TEXT_BRIGHT, FontWeight::SEMIBOLD),
-                        Level::Group => (theme::TEXT_SOFT, FontWeight::MEDIUM),
-                        Level::Item => (theme::TEXT_ROW, FontWeight::NORMAL),
+                        Level::Category => (theme::text_bright(), FontWeight::SEMIBOLD),
+                        Level::Group => (theme::text_soft(), FontWeight::MEDIUM),
+                        Level::Item => (theme::text_row(), FontWeight::NORMAL),
                     }
                 };
                 let chevron = expanded.map(|open| {
@@ -204,8 +212,8 @@ impl Tree {
                     .rounded(theme::RADIUS_SM)
                     .text_color(color)
                     .font_weight(weight)
-                    .when(selected, |d| d.bg(theme::ACCENT_SELECT))
-                    .when(!disabled && !selected, |d| d.cursor_pointer().hover(|s| s.bg(theme::HOVER)))
+                    .when(selected, |d| d.bg(theme::accent_select()))
+                    .when(!disabled && !selected, |d| d.cursor_pointer().hover(|s| s.bg(theme::hover())))
                     .map(|d| match chevron {
                         Some(c) => d.child(c),
                         // Les feuilles sans chevron restent alignées avec leurs voisines.
@@ -213,7 +221,18 @@ impl Tree {
                         None => d,
                     })
                     .child(div().flex_1().min_w(px(0.)).truncate().child(label))
-                    .child(div().flex_none().font_family(theme::FONT_MONO).text_size(theme::TEXT_XS).text_color(theme::TEXT_FAINT).child(count))
+                    .when_some(modified, |d, tip| {
+                        d.child(
+                            div()
+                                .id(ElementId::from(("tree-mod", i)))
+                                .flex_none()
+                                .size(px(7.))
+                                .rounded(px(4.))
+                                .bg(theme::accent())
+                                .tooltip(crate::widgets::tooltip(tip)),
+                        )
+                    })
+                    .child(div().flex_none().font_family(theme::FONT_MONO).text_size(theme::TEXT_XS).text_color(theme::text_faint()).child(count))
                     .on_click(move |_, _, cx| {
                         st.update(cx, |s, cx| match action {
                             Action::Toggle(k) => s.toggle_open(k, cx),
@@ -241,11 +260,11 @@ impl Tree {
             .pl(px(34.))
             .pr(px(34.))
             .rounded(theme::RADIUS)
-            .bg(theme::FIELD)
+            .bg(theme::field())
             .border_1()
-            .border_color(if focused { theme::ACCENT } else { theme::BORDER })
+            .border_color(if focused { theme::accent() } else { theme::border() })
             .cursor_text()
-            .child(div().absolute().left(px(11.)).top(px(10.)).child(icon(Icon::Search, px(15.), theme::TEXT_DIM)))
+            .child(div().absolute().left(px(11.)).top(px(10.)).child(icon(Icon::Search, px(15.), theme::text_dim())))
             .child(
                 div()
                     .flex()
@@ -255,10 +274,10 @@ impl Tree {
                         if has_query {
                             d.child(s.query.clone())
                         } else {
-                            d.text_color(theme::TEXT_FAINT).child(s.t("Rechercher une voiture", "Search for a car"))
+                            d.text_color(theme::text_faint()).child(s.t("Rechercher une voiture", "Search for a car"))
                         }
                     })
-                    .when(focused, |d| d.child(div().w(px(1.5)).h(px(16.)).ml(px(1.)).bg(theme::ACCENT))),
+                    .when(focused, |d| d.child(div().w(px(1.5)).h(px(16.)).ml(px(1.)).bg(theme::accent()))),
             )
             .when(has_query, |d| {
                 d.child(
@@ -267,7 +286,7 @@ impl Tree {
                         .right(px(4.))
                         .top(px(3.))
                         .size(px(28.))
-                        .child(icon(Icon::Close, px(14.), theme::TEXT_ICON))
+                        .child(icon(Icon::Close, px(14.), theme::text_icon()))
                         .on_click(on(&self.state, |s, cx| s.set_query(String::new(), cx))),
                 )
             })
@@ -327,9 +346,9 @@ impl Render for Tree {
             .flex_none()
             .w(theme::TREE_W)
             .min_h(px(0.))
-            .bg(theme::SIDEBAR)
+            .bg(theme::sidebar())
             .border_r_1()
-            .border_color(theme::DIVIDER)
+            .border_color(theme::divider())
             .child(
                 div()
                     .flex()
@@ -339,7 +358,7 @@ impl Render for Tree {
                     .pt(px(14.))
                     .pb(px(10.))
                     .child(self.render_search(s, window))
-                    .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child(summary)),
+                    .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(summary)),
             )
             .child(
                 div()

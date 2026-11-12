@@ -264,6 +264,8 @@ impl AppState {
                     Ok(mut list) => {
                         list.sort_by_key(|e| e.name().to_lowercase());
                         s.engine.events = list;
+                        // Projet rouvert : voitures utilisant des sons déjà remplacés.
+                        s.ensure_map(cx);
                     }
                     Err(err) => s.engine.error = Some(format!("FMOD : {err}").into()),
                 }
@@ -290,13 +292,34 @@ impl AppState {
         self.ensure_map(cx);
     }
 
-    /// Lance la cartographie de la voiture affichée si elle n'est pas encore faite.
-    fn ensure_map(&mut self, cx: &mut Context<Self>) {
-        let Some(Leaf::Car(i)) = self.leaf else { return };
+    /// Voiture dont un son est remplacé (d'après sa carte : sons partagés compris).
+    pub fn car_modified(&self, i: usize) -> bool {
+        let (Some(p), Some(Ok(map))) = (self.project.as_ref(), self.engine.maps.get(&i)) else { return false };
+        map.iter().any(|m| p.replacements.contains_key(&m.sound))
+    }
+
+    /// Banque dont un son est remplacé.
+    pub fn bank_modified(&self, bank: usize) -> bool {
+        self.project.as_ref().is_some_and(|p| p.replacements.keys().any(|r| r.bank == bank))
+    }
+
+    /// Cartographie une voiture à la fois : d'abord celle affichée, puis, en arrière-plan,
+    /// celles des banques modifiées (pour savoir quelles voitures utilisent les sons
+    /// remplacés, même celles jamais ouvertes).
+    pub(super) fn ensure_map(&mut self, cx: &mut Context<Self>) {
         let e = &self.engine;
-        if e.maps.contains_key(&i) || e.mapping.is_some() {
+        if e.mapping.is_some() {
             return;
         }
+        let shown = match self.leaf {
+            Some(Leaf::Car(i)) if !e.maps.contains_key(&i) => Some(i),
+            _ => None,
+        };
+        let Some(i) = shown.or_else(|| (0..e.events.len()).find(|&i| !e.maps.contains_key(&i) && self.bank_modified(e.events[i].bank)))
+        else {
+            return;
+        };
+        let e = &self.engine;
         let (Some(lib), Some(data), Some(event)) = (e.lib.clone(), e.data.clone(), e.events.get(i).cloned()) else {
             return;
         };
@@ -422,10 +445,13 @@ impl AppState {
 
     /// Sons originaux ou sons remplacés : redémarre le moteur avec l'autre banque.
     /// Le simulateur joue le mod : il redémarre pour entendre une modification.
+    /// Appelé à chaque changement des sons remplacés : cartographie aussi les voitures
+    /// des banques touchées (indicateur « modifiée » dans l'arborescence).
     pub(super) fn refresh_modded_engine(&mut self, cx: &mut Context<Self>) {
         if self.engine.use_mod && self.engine.sim.take().is_some() {
             self.start_engine(cx);
         }
+        self.ensure_map(cx);
     }
 
     pub fn set_use_mod(&mut self, on: bool, cx: &mut Context<Self>) {
@@ -446,6 +472,7 @@ impl AppState {
 
     /// Image suivante du simulateur (appelée par la vue racine à chaque rendu).
     pub fn tick(&mut self) {
+        self.tick_keys();
         self.engine.tick(self.settings.rpm_limiter);
     }
 }

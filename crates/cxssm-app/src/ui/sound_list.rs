@@ -113,7 +113,7 @@ impl SoundList {
         let p = s.project.as_ref()?;
         let (bank, smp) = p.sample(r)?;
         let channels = if smp.channels == 1 { "mono".to_string() } else { format!("{} ch", smp.channels) };
-        let selected = s.sound == Some(r) || matches!(s.playback.playing, Some(Playing::Original(x)) if x == r);
+        let selected = s.is_selected(r) || matches!(s.playback.playing, Some(Playing::Original(x)) if x == r);
         Some(Item {
             r,
             name: smp.name.clone().into(),
@@ -132,10 +132,12 @@ impl SoundList {
 /// Ligne d'un son (partagée par les deux modes).
 fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gpui::AnyElement {
     let r = it.r;
-    let selected = s.sound == Some(r);
+    let selected = s.is_selected(r);
+    // Plusieurs sons sélectionnés : le son affiché dans le panneau garde un trait plein.
+    let primary = s.sound == Some(r);
     let playing = s.playback.playing == Some(Playing::Original(r));
     let decoding = s.playback.decoding == Some(r);
-    let num_color = if it.active { theme::TEXT } else { theme::TEXT_FAINT };
+    let num_color = if it.active { theme::text() } else { theme::text_faint() };
 
     let play = div()
         .id(ElementId::from(("sound-play", i)))
@@ -146,17 +148,17 @@ fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gp
         .size(px(34.))
         .rounded(px(17.))
         .border_1()
-        .border_color(theme::BORDER_STRONG)
-        .bg(theme::BUTTON)
+        .border_color(theme::border_strong())
+        .bg(theme::button())
         .cursor_pointer()
-        .hover(|d| d.bg(theme::BUTTON_HOVER))
+        .hover(|d| d.bg(theme::button_hover()))
         .map(|d| {
             if decoding {
-                d.text_color(theme::ACCENT).child("…")
+                d.text_color(theme::accent()).child("…")
             } else if playing {
-                d.child(icon(Icon::Stop, px(12.), theme::ACCENT))
+                d.child(icon(Icon::Stop, px(12.), theme::accent()))
             } else {
-                d.child(icon(Icon::Play, px(13.), theme::TEXT_SOFT))
+                d.child(icon(Icon::Play, px(13.), theme::text_soft()))
             }
         })
         .on_click({
@@ -169,8 +171,8 @@ fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gp
 
     let badge = match &it.status {
         SoundStatus::Original => None,
-        SoundStatus::Replaced(_) => Some((s.t("Remplacé", "Replaced"), theme::ACCENT)),
-        SoundStatus::Mismatch(..) => Some((s.t("Incompatible", "Incompatible"), theme::DANGER)),
+        SoundStatus::Replaced(_) => Some((s.t("Remplacé", "Replaced"), theme::accent())),
+        SoundStatus::Mismatch(..) => Some((s.t("Incompatible", "Incompatible"), theme::danger())),
     };
     let info = div()
         .flex()
@@ -183,7 +185,7 @@ fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gp
             mono(it.name)
                 .text_size(theme::TEXT_MD)
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme::TEXT_BRIGHT)
+                .text_color(theme::text_bright())
                 .truncate(),
         )
         .child(
@@ -192,7 +194,7 @@ fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gp
                 .items_center()
                 .gap(px(6.))
                 .text_size(theme::TEXT_SM)
-                .text_color(theme::TEXT_DIM)
+                .text_color(theme::text_dim())
                 .child(div().truncate().child(it.role))
                 .when_some(badge, |d, (label, color)| {
                     d.child(
@@ -219,7 +221,7 @@ fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gp
                     .flex()
                     .items_center()
                     .gap(theme::GAP_SM)
-                    .child(meter(volume, px(5.), theme::DIVIDER, theme::ACCENT))
+                    .child(meter(volume, px(5.), theme::divider(), theme::accent()))
                     .child(mono(format!("{volume:.2}")).w(px(32.)).text_right().text_size(theme::TEXT_XS).text_color(num_color)),
             )
             .child(
@@ -231,8 +233,8 @@ fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gp
             .flex()
             .flex_col()
             .gap(theme::GAP_XS)
-            .child(mono(duration).text_size(theme::TEXT_XS).text_color(theme::TEXT))
-            .child(div().truncate().text_size(theme::TEXT_XS).text_color(theme::TEXT_FAINT).child(format)),
+            .child(mono(duration).text_size(theme::TEXT_XS).text_color(theme::text()))
+            .child(div().truncate().text_size(theme::TEXT_XS).text_color(theme::text_faint()).child(format)),
     };
 
     let st = state.clone();
@@ -247,29 +249,30 @@ fn render_item(s: &AppState, state: &Entity<AppState>, i: usize, it: Item) -> gp
         .p(theme::GAP_SM)
         .rounded(theme::RADIUS_MD)
         .border_1()
-        .border_color(if selected {
-            theme::ACCENT
-        } else if it.active {
-            theme::ACCENT_EDGE
+        .border_color(if primary {
+            theme::accent()
+        } else if selected || it.active {
+            theme::accent_edge()
         } else {
             gpui::transparent_black().into()
         })
         .bg(if selected {
-            theme::ACCENT_TINT
+            theme::accent_tint()
         } else if it.active {
-            theme::ROW_LIVE
+            theme::row_live()
         } else {
             gpui::transparent_black().into()
         })
         // Moteur en marche : les sons qui ne jouent pas s'effacent, ceux entendus ressortent.
         .when(s.engine.running() && !it.active && !selected, |d| d.opacity(0.5))
         .cursor_pointer()
-        .when(!selected, |d| d.hover(|d| d.bg(theme::HOVER)))
+        .when(!selected, |d| d.hover(|d| d.bg(theme::hover())))
         .child(div().flex_none().w(px(COL_PLAY)).child(play))
         .child(info)
         .child(div().flex_1().min_w(px(0.)).child(strip(it.strip, theme::STRIP_H)))
         .child(div().flex_none().w(px(COL_VALUES)).child(values))
-        .on_click(move |_, _, cx| st.update(cx, |s, cx| s.select_sound(r, cx)))
+        // Clic : ce son seul ; Ctrl (Cmd) + clic : ajouter / retirer ; Maj + clic : plage.
+        .on_click(move |e, _, cx| st.update(cx, |s, cx| s.click_sound(r, e.modifiers(), cx)))
         .into_any_element()
 }
 
@@ -287,10 +290,10 @@ fn group_header(s: &AppState, title: &'static str, hint: &'static str, live: boo
             div()
                 .text_size(theme::TEXT_SM)
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(if live { theme::ACCENT } else { theme::TEXT_SOFT })
+                .text_color(if live { theme::accent() } else { theme::text_soft() })
                 .child(title.to_uppercase()),
         )
-        .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_FAINT).child(hint))
+        .child(div().text_size(theme::TEXT_SM).text_color(theme::text_faint()).child(hint))
         .when(live, |d| {
             d.child(
                 div()
@@ -299,18 +302,18 @@ fn group_header(s: &AppState, title: &'static str, hint: &'static str, live: boo
                     .gap(px(5.))
                     .px(px(7.))
                     .rounded(px(9.))
-                    .bg(theme::ACCENT)
-                    .text_color(theme::ON_ACCENT)
+                    .bg(theme::accent())
+                    .text_color(theme::on_accent())
                     .text_size(theme::TEXT_XS)
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(div().size(px(6.)).rounded(px(3.)).bg(theme::ON_ACCENT))
+                    .child(div().size(px(6.)).rounded(px(3.)).bg(theme::on_accent()))
                     .child(s.t("EN COURS", "LIVE")),
             )
         })
 }
 
 fn message(text: impl Into<SharedString>) -> gpui::AnyElement {
-    div().flex_1().flex().items_center().justify_center().p(px(24.)).text_color(theme::TEXT_DIM).child(text.into()).into_any_element()
+    div().flex_1().flex().items_center().justify_center().p(px(24.)).text_color(theme::text_dim()).child(text.into()).into_any_element()
 }
 
 impl Render for SoundList {
@@ -340,7 +343,7 @@ impl Render for SoundList {
                 let label = if r == 0. { "0".to_string() } else { format!("{}k", r as u32 / 1000) };
                 ticks.push(
                     div().absolute().top_0().left(relative(r / max)).w(px(0.)).child(
-                        div().ml(px(-15.)).w(px(30.)).text_center().font_family(theme::FONT_MONO).text_size(theme::TEXT_XS).text_color(theme::TEXT_FAINT).child(label),
+                        div().ml(px(-15.)).w(px(30.)).text_center().font_family(theme::FONT_MONO).text_size(theme::TEXT_XS).text_color(theme::text_faint()).child(label),
                     ),
                 );
                 r += 2000.;
@@ -358,9 +361,9 @@ impl Render for SoundList {
             .pt(theme::GAP_MD)
             .pb(theme::GAP_SM)
             .border_b_1()
-            .border_color(theme::DIVIDER)
+            .border_color(theme::divider())
             .text_size(theme::TEXT_SM)
-            .text_color(theme::TEXT_DIM)
+            .text_color(theme::text_dim())
             .child(div().flex_none().w(px(COL_PLAY)))
             .child(div().flex_none().w(px(COL_NAME)).child(s.t("Son", "Sound")))
             .child(div().flex_1().min_w(px(0.)).child(ruler))
@@ -447,9 +450,9 @@ impl Render for SoundList {
             .flex_1()
             .min_h(px(0.))
             .rounded(theme::RADIUS_LG)
-            .bg(theme::PANEL)
+            .bg(theme::panel())
             .border_1()
-            .border_color(theme::DIVIDER)
+            .border_color(theme::divider())
             .overflow_hidden()
             .child(header)
             .child(body)

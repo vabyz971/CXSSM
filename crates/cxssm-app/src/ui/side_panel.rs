@@ -28,13 +28,13 @@ impl SidePanel {
             .items_center()
             .w(theme::RAIL_W)
             .py(px(7.))
-            .bg(theme::SIDEBAR)
+            .bg(theme::sidebar())
             .border_l_1()
-            .border_color(theme::DIVIDER)
+            .border_color(theme::divider())
             .child(
                 ghost("side-open")
                     .size(px(36.))
-                    .child(icon(Icon::PanelExpand, px(16.), theme::TEXT_ICON))
+                    .child(icon(Icon::PanelExpand, px(16.), theme::text_icon()))
                     .on_click(on(&self.state, |s, cx| s.set_side(true, cx))),
             )
             .into_any_element()
@@ -51,10 +51,10 @@ impl SidePanel {
                 .px(px(10.))
                 .font_weight(FontWeight::MEDIUM)
                 .cursor_pointer()
-                .text_color(if active { theme::TEXT_BRIGHT } else { theme::TEXT_DIM })
+                .text_color(if active { theme::text_bright() } else { theme::text_dim() })
                 .border_b_2()
-                .border_color(if active { theme::ACCENT } else { gpui::transparent_black().into() })
-                .hover(|d| d.text_color(theme::TEXT_BRIGHT))
+                .border_color(if active { theme::accent() } else { gpui::transparent_black().into() })
+                .hover(|d| d.text_color(theme::text_bright()))
                 .child(label)
                 .on_click(on(&self.state, move |s, cx| s.set_tab(t, cx)))
         };
@@ -66,7 +66,7 @@ impl SidePanel {
             .pl(theme::GAP_MD)
             .pr(theme::GAP_SM)
             .border_b_1()
-            .border_color(theme::DIVIDER)
+            .border_color(theme::divider())
             .child(
                 div()
                     .flex()
@@ -78,7 +78,7 @@ impl SidePanel {
             .child(
                 ghost("side-close")
                     .size(px(32.))
-                    .child(icon(Icon::PanelCollapse, px(16.), theme::TEXT_ICON))
+                    .child(icon(Icon::PanelCollapse, px(16.), theme::text_icon()))
                     .on_click(on(&self.state, |s, cx| s.set_side(false, cx))),
             )
     }
@@ -136,14 +136,14 @@ impl SidePanel {
                     .flex()
                     .flex_col()
                     .gap(px(6.))
-                    .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child(caption))
+                    .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(caption))
                     .child(strip(preview, px(76.))),
             )
             .child(div().flex().flex_col().gap(px(10.)).children(rows.into_iter().map(|(k, v, is_mono)| {
                 div()
                     .flex()
                     .gap(theme::GAP_MD)
-                    .child(div().flex_none().w(px(110.)).text_color(theme::TEXT_DIM).child(k))
+                    .child(div().flex_none().w(px(110.)).text_color(theme::text_dim()).child(k))
                     .child(div().flex_1().min_w(px(0.)).when(is_mono, |d| d.font_family(theme::FONT_MONO)).child(v))
             })))
     }
@@ -169,7 +169,7 @@ impl SidePanel {
                             .items_start()
                             .gap(px(2.))
                             .child(s.t("Importer un fichier audio pour ce son", "Import an audio file for this sound"))
-                            .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child("WAV, OGG, FLAC ou MP3"))
+                            .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child("WAV, OGG, FLAC ou MP3"))
                             .on_click(on(&self.state, move |s, cx| s.pick_replacement(r, cx))),
                     ),
             )
@@ -206,7 +206,11 @@ impl SidePanel {
 
 pub(super) fn status_text(s: &AppState, r: SoundRef) -> String {
     let file = |f: &std::path::Path| f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let adjusted_original = s.editor.edits.get(&r).is_some_and(|e| e.source == crate::state::EditSource::Original);
     match s.project.as_ref().map(|p| p.status(r)) {
+        Some(SoundStatus::Replaced(_)) if adjusted_original => {
+            s.t("Son original modifié (volume, hauteur)", "Original sound, adjusted (volume, pitch)").to_string()
+        }
         Some(SoundStatus::Replaced(f)) => s.tf(format!("Remplacé par {}", file(&f)), format!("Replaced by {}", file(&f))),
         Some(SoundStatus::Mismatch(f, _)) => s.tf(format!("{} : incompatible", file(&f)), format!("{}: incompatible", file(&f))),
         _ => s.t("Son original du jeu", "Original game sound").to_string(),
@@ -220,7 +224,7 @@ impl Render for SidePanel {
             return self.rail();
         }
         let body = match s.sound {
-            None => div().text_color(theme::TEXT_DIM).child(s.t("Sélectionnez un son dans la liste.", "Select a sound in the list.")),
+            None => div().text_color(theme::text_dim()).child(s.t("Sélectionnez un son dans la liste.", "Select a sound in the list.")),
             Some(r) => {
                 let context = match s.leaf {
                     Some(Leaf::Car(i)) => s.engine.events.get(i).map(|e| e.name().to_string()).unwrap_or_default(),
@@ -237,7 +241,7 @@ impl Render for SidePanel {
                             .flex_col()
                             .gap(px(2.))
                             .child(div().font_family(theme::FONT_MONO).text_size(theme::TEXT_LG).font_weight(FontWeight::SEMIBOLD).child(s.sound_name(r)))
-                            .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child(format!("{role} · {context}"))),
+                            .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(format!("{role} · {context}"))),
                     )
                     .child(match s.side_tab {
                         SideTab::Info => self.info_tab(s, r),
@@ -252,9 +256,9 @@ impl Render for SidePanel {
             .flex_none()
             .w(theme::SIDE_W)
             .min_h(px(0.))
-            .bg(theme::SIDEBAR)
+            .bg(theme::sidebar())
             .border_l_1()
-            .border_color(theme::DIVIDER)
+            .border_color(theme::divider())
             .child(self.tabs(s))
             .child(div().id("side-body").flex_1().min_h(px(0.)).overflow_y_scroll().p(theme::GAP_LG).child(body))
             .into_any_element()

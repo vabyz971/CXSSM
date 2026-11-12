@@ -14,12 +14,16 @@ use gpui::{AppContext as _, point, px, Context, FocusHandle, ScrollHandle, Share
 
 pub mod editor;
 pub mod engine;
+pub mod history;
+pub mod shortcuts;
 pub mod playback;
 pub mod updates;
 pub mod workspace;
 
-pub use editor::{Editor, Phase, Slider, Source as EditSource};
+pub use editor::{Editor, Phase, Slider, Source as EditSource, SourceKind};
 pub use engine::EngineState;
+pub use history::History;
+pub use shortcuts::Shortcut;
 pub use playback::{Playback, Playing};
 pub use updates::UpdateState;
 
@@ -65,6 +69,8 @@ pub enum SideTab {
 pub enum PrefSection {
     #[default]
     General,
+    Appearance,
+    Shortcuts,
     Game,
     Fmod,
     Updates,
@@ -128,7 +134,15 @@ pub struct AppState {
 
     // ── navigation ──
     pub leaf: Option<Leaf>,
+    /// Son principal (affiché dans le panneau de détails, ancre des sélections).
     pub sound: Option<SoundRef>,
+    /// Sons sélectionnés (Ctrl / Maj + clic), dont `sound` ; vide = seulement `sound`.
+    pub selection: Vec<SoundRef>,
+    /// Historique annuler / rétablir des remplacements et réglages.
+    pub history: History,
+    /// Raccourci en cours de modification (prochaine touche pressée).
+    pub capturing: Option<Shortcut>,
+    pub keys: shortcuts::KeyTracker,
     pub open: HashSet<TreeKey>,
     pub query: String,
     pub search_focus: FocusHandle,
@@ -159,6 +173,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(cx: &mut Context<Self>, initial: Option<PathBuf>) -> Self {
         let settings = Settings::load();
+        crate::theme::apply(settings.theme, settings.accent_rgb());
         let fmod = settings.fmod();
         match &fmod {
             Some(f) => log::info!("FMOD Engine : {}", f.root.display()),
@@ -182,6 +197,10 @@ impl AppState {
             fmod,
             leaf: None,
             sound: None,
+            selection: Vec::new(),
+            history: History::default(),
+            capturing: None,
+            keys: Default::default(),
             open: HashSet::from([TreeKey::Category(SoundCategory::Engine)]),
             query: String::new(),
             search_focus: cx.focus_handle(),
@@ -318,6 +337,8 @@ impl AppState {
                         s.status = s.summary_status();
                         s.leaf = None;
                         s.sound = None;
+                        s.selection.clear();
+                        s.history = History::default();
                         s.playback.reset_spectra();
                         s.editor.edits.clear();
                         s.editor.takes = Default::default();
@@ -427,6 +448,7 @@ impl AppState {
     }
 
     pub fn restore_original(&mut self, r: SoundRef, cx: &mut Context<Self>) {
+        self.checkpoint("Restaurer l'original", "Restore original");
         self.forget_edit(r);
         if let Some(p) = self.project.as_mut() {
             p.clear_replacement(r);
@@ -444,6 +466,7 @@ impl AppState {
         }
         self.leaf = Some(leaf);
         self.sound = None;
+        self.selection.clear();
         self.list_scroll.0.borrow().base_handle.set_offset(point(px(0.), px(0.)));
         if let Leaf::Car(i) = leaf {
             // Déplie la branche de la voiture (utile quand elle est choisie par la recherche).
@@ -457,7 +480,91 @@ impl AppState {
 
     pub fn select_sound(&mut self, r: SoundRef, cx: &mut Context<Self>) {
         self.sound = Some(r);
+        self.selection = vec![r];
         cx.notify();
+    }
+
+    /// Clic sur un son : seul (clic), ajouté ou retiré (Ctrl / Cmd), ou toute la plage
+    /// depuis le son principal (Maj).
+    pub fn click_sound(&mut self, r: SoundRef, m: gpui::Modifiers, cx: &mut Context<Self>) {
+        if m.shift {
+            let list = self.visible_sounds();
+            let pos = |x: SoundRef| list.iter().position(|&y| y == x);
+            if let (Some(a), Some(b)) = (self.sound.and_then(pos), pos(r)) {
+                let (lo, hi) = (a.min(b), a.max(b));
+                let mut sel = if m.secondary() { self.selected() } else { Vec::new() };
+                for &x in &list[lo..=hi] {
+                    if !sel.contains(&x) {
+                        sel.push(x);
+                    }
+                }
+                self.selection = sel;
+                cx.notify();
+                return;
+            }
+        }
+        if m.secondary() {
+            let mut sel = self.selected();
+            if let Some(i) = sel.iter().position(|&x| x == r) {
+                sel.remove(i);
+                // Le son principal reste un son sélectionné.
+                if self.sound == Some(r) {
+                    self.sound = sel.last().copied();
+                }
+            } else {
+                sel.push(r);
+                self.sound = Some(r);
+            }
+            self.selection = sel;
+            cx.notify();
+            return;
+        }
+        self.select_sound(r, cx);
+    }
+
+    /// Sélectionne tous les sons de la liste affichée.
+    pub fn select_all(&mut self, cx: &mut Context<Self>) {
+        let list = self.visible_sounds();
+        if list.is_empty() {
+            return;
+        }
+        if self.sound.is_none_or(|r| !list.contains(&r)) {
+            self.sound = list.first().copied();
+        }
+        self.selection = list;
+        cx.notify();
+    }
+
+    /// Sons sélectionnés, le son principal compris.
+    pub fn selected(&self) -> Vec<SoundRef> {
+        match (self.selection.is_empty(), self.sound) {
+            (false, _) => self.selection.clone(),
+            (true, Some(r)) => vec![r],
+            (true, None) => Vec::new(),
+        }
+    }
+
+    pub fn is_selected(&self, r: SoundRef) -> bool {
+        self.sound == Some(r) || self.selection.contains(&r)
+    }
+
+    /// Sons de la liste affichée, dans l'ordre (voiture : accélération puis décélération).
+    pub fn visible_sounds(&self) -> Vec<SoundRef> {
+        let mut out: Vec<SoundRef> = Vec::new();
+        match self.leaf {
+            Some(Leaf::Car(_)) => {
+                for on_load in [true, false] {
+                    for m in self.car_map().into_iter().flatten().filter(|m| m.on_load == on_load) {
+                        if !out.contains(&m.sound) {
+                            out.push(m.sound);
+                        }
+                    }
+                }
+            }
+            Some(Leaf::Bank(cat, bank)) => out.extend_from_slice(self.catalog.sounds(cat, bank)),
+            None => {}
+        }
+        out
     }
 
     pub fn toggle_open(&mut self, key: TreeKey, cx: &mut Context<Self>) {
@@ -515,8 +622,8 @@ impl AppState {
     /// Bouton de la souris relâché n'importe où dans la fenêtre.
     pub fn mouse_released(&mut self, cx: &mut Context<Self>) {
         // Fin du réglage d'un curseur : le son est rendu avec la nouvelle valeur.
-        if let (Some(Drag::Slider(_)), Some(r)) = (&self.drag, self.sound) {
-            self.render_edit(r, cx);
+        if let Some(Drag::Slider(sl)) = self.drag {
+            self.finish_slide(sl, cx);
         }
         self.drag = None;
         self.engine.throttle = false;
@@ -543,6 +650,7 @@ impl AppState {
 
     pub fn close_preferences(&mut self, cx: &mut Context<Self>) {
         self.prefs_open = false;
+        self.capturing = None;
         cx.notify();
     }
 
@@ -558,6 +666,26 @@ impl AppState {
         cx.notify();
     }
 
+    /// Thème clair ou sombre, appliqué immédiatement à toute l'interface.
+    pub fn set_theme(&mut self, mode: cxssm_core::ThemeMode, cx: &mut Context<Self>) {
+        self.settings.theme = mode;
+        self.apply_theme(cx);
+    }
+
+    /// Couleur d'accentuation (`0xRRGGBB`).
+    pub fn set_accent(&mut self, rgb: u32, cx: &mut Context<Self>) {
+        self.settings.set_accent(rgb);
+        self.apply_theme(cx);
+    }
+
+    fn apply_theme(&mut self, cx: &mut Context<Self>) {
+        crate::theme::apply(self.settings.theme, self.settings.accent_rgb());
+        self.save_settings();
+        // Les spectres sont dessinés avec les couleurs du thème : on les redessine.
+        cx.refresh_windows();
+        cx.notify();
+    }
+
     pub fn toggle_limiter(&mut self, cx: &mut Context<Self>) {
         self.settings.rpm_limiter = !self.settings.rpm_limiter;
         self.save_settings();
@@ -570,6 +698,7 @@ impl AppState {
         if self.settings.is_hidden(c) && matches!(self.leaf, Some(Leaf::Bank(cat, _)) if cat == c) {
             self.leaf = None;
             self.sound = None;
+            self.selection.clear();
         }
         cx.notify();
     }
@@ -671,6 +800,9 @@ impl AppState {
 
     /// Une tâche de fond ou une animation demande de redessiner à chaque image.
     pub fn is_animating(&self) -> bool {
-        self.busy || self.playback.is_active() || self.engine.is_active() || self.editor_busy()
+        self.busy || self.playback.is_active() || self.engine.is_active() || self.editor_busy() || self.keys.releasing()
     }
+
+
+
 }

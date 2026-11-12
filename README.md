@@ -58,13 +58,36 @@ My mod/
 - CXSSM refuses to use an already modified bundle as the original: it compares the file size
   with the size declared in the game's Addressables catalog (`aa/catalog.json`).
 
-## Track editor (experimental)
+## Track editor
 
-The **Edit** tab of a sound adjusts its volume (±12 dB) and pitch (±6 semitones). For engine
+The **Edit** tab of a sound adjusts its volume (±12 dB) and pitch (±6 semitones). The source
+can be the game's **original** sound (to make a sound quieter or deeper without any other
+file), an imported **file**, or — for engine sounds, experimental — a car **recording**. For engine
 sounds it can also rebuild the loops from two continuous recordings of the car (full
 acceleration and full deceleration): CXSSM tracks the RPM in the recording, picks the passage
 closest to each loop's natural RPM, corrects its pitch and cuts a seamless loop of whole
 engine cycles. **Generate all of the car's tracks** does it for every loop of the car.
+
+Several sounds can be selected at once (Ctrl / Cmd + click to add or remove, Shift + click for
+a range, Ctrl+A for the whole list): the volume and pitch set in the Edit tab then apply to all
+of them. Every change can be undone and redone (Ctrl+Z, Ctrl+Shift+Z, or the arrows in the app
+bar).
+
+Cars that use a replaced sound — including cars sharing a sound with the one you edited — get a
+dot in the tree (their bank is mapped in the background).
+
+### Keyboard shortcuts
+
+| Action | Default |
+|---|---|
+| Start / stop the engine | `E` |
+| Sweep up to the limiter | `S` |
+| Throttle (hold) | `Space` |
+| Undo / redo | `Ctrl+Z` / `Ctrl+Shift+Z` |
+| Select all sounds | `Ctrl+A` |
+
+All of them can be changed in **Preferences › Keyboard shortcuts** by pressing the new key, which
+also makes them work with any keyboard layout.
 
 ## Engine simulator: finding which sounds to replace
 
@@ -310,6 +333,9 @@ every text is written in both languages where it is used, e.g. `self.t("Ouvrir",
 - [x] In-game test of a replaced sound: the replaced sounds play correctly in CarX Street
 - [ ] Native FMOD Vorbis encoder (would remove the `fsbank` dependency)
 - [x] Preferences: language (FR/EN), rev limiter on/off, visible categories, game auto-detection
+- [x] Appearance: dark / light theme and accent colour
+- [x] Multi-selection (Ctrl / Shift + click, Ctrl+A) and undo / redo (Ctrl+Z, Ctrl+Shift+Z)
+- [x] Configurable keyboard shortcuts (engine E, sweep S, throttle Space…) and modified-car indicator
 - [x] Category tree with car search, collapsible details panel (design in `docs/design/`)
 - [ ] Drag & drop of replacement files
 - [ ] Automatic resampling and mono/stereo conversion

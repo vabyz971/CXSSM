@@ -8,7 +8,7 @@
 //!            (preferences, project_dialog : fenêtres modales)
 //! ```
 
-use gpui::{div, prelude::*, px, Context, Entity, FontWeight, MouseButton, MouseMoveEvent, Window};
+use gpui::{div, prelude::*, px, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent, Window};
 
 mod app_bar;
 mod fmod_setup;
@@ -37,13 +37,18 @@ pub struct Workspace {
     prefs: Entity<preferences::Preferences>,
     project: Entity<project_dialog::ProjectDialog>,
     fmod_setup: Entity<fmod_setup::FmodSetup>,
+    /// Focus de la fenêtre : reçoit les raccourcis clavier.
+    focus: FocusHandle,
 }
 
 impl Workspace {
-    pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
+    pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Tout changement de l'état redessine la fenêtre.
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
+        let focus = cx.focus_handle();
+        window.focus(&focus);
         Self {
+            focus,
             tree: cx.new(|_| tree::Tree::new(state.clone())),
             simulator: cx.new(|_| rpm_simulator::RpmSimulator::new(state.clone())),
             sounds: cx.new(|_| sound_list::SoundList::new(state.clone())),
@@ -72,7 +77,7 @@ impl Workspace {
         }
         let Some(leaf) = s.leaf else {
             return main.child(
-                div().flex_1().flex().items_center().justify_center().text_color(theme::TEXT_DIM).child(s.t(
+                div().flex_1().flex().items_center().justify_center().text_color(theme::text_dim()).child(s.t(
                     "Choisissez une voiture (ou une banque de sons) dans l'arborescence.",
                     "Pick a car (or a sound bank) in the tree.",
                 )),
@@ -100,7 +105,7 @@ impl Workspace {
                     .flex_col()
                     .gap(theme::GAP_XS)
                     .min_w(px(0.))
-                    .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child(breadcrumb))
+                    .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(breadcrumb))
                     .child(div().text_size(theme::TEXT_H1).font_weight(FontWeight::SEMIBOLD).truncate().child(title)),
             )
             .when(is_car, |d| {
@@ -131,15 +136,15 @@ impl Workspace {
                 .gap(theme::GAP_MD)
                 .p(px(32.))
                 .rounded(theme::RADIUS_LG)
-                .bg(theme::PANEL)
+                .bg(theme::panel())
                 .border_1()
-                .border_color(theme::DIVIDER)
+                .border_color(theme::divider())
                 .child(div().text_size(theme::TEXT_TITLE).font_weight(FontWeight::SEMIBOLD).child(s.t("Aucun bundle chargé", "No bundle loaded")))
                 .child(
                     div()
                         .font_family(theme::FONT_MONO)
                         .text_size(theme::TEXT_SM)
-                        .text_color(theme::TEXT_DIM)
+                        .text_color(theme::text_dim())
                         .child("CarX Street_Data/StreamingAssets/aa/<platform>/fmod_assets_all.bundle"),
                 )
                 .child(
@@ -148,7 +153,7 @@ impl Workspace {
                         .gap(theme::GAP_SM)
                         .child(
                             primary("open-empty")
-                                .child(icon_sm(Icon::Folder, theme::ON_ACCENT))
+                                .child(icon_sm(Icon::Folder, theme::on_accent()))
                                 .child(s.t("Ouvrir un projet ou un bundle", "Open a project or a bundle"))
                                 .on_click(on(&self.state, |s, cx| s.open_file_dialog(cx))),
                         )
@@ -189,8 +194,8 @@ impl Render for Workspace {
             .flex()
             .flex_col()
             .size_full()
-            .bg(theme::BG)
-            .text_color(theme::TEXT)
+            .bg(theme::bg())
+            .text_color(theme::text())
             .font_family(theme::FONT_UI)
             .text_size(theme::TEXT_MD)
             .when(dragging, |d| {
@@ -206,6 +211,31 @@ impl Render for Workspace {
                 })
             })
             .on_mouse_up(MouseButton::Left, on(&state, |s, cx| s.mouse_released(cx)))
+            // Raccourcis clavier : la vue racine garde le focus (un clic n'importe où le lui
+            // rend ; le champ de recherche le reprend ensuite s'il est cliqué) et voit les
+            // touches avant les éléments (phase de capture).
+            .track_focus(&self.focus)
+            .capture_any_mouse_down({
+                let focus = self.focus.clone();
+                move |_: &MouseDownEvent, window, _| window.focus(&focus)
+            })
+            .capture_key_down({
+                let st = state.clone();
+                move |e: &KeyDownEvent, window, cx| {
+                    let typing = st.read(cx).search_focus.is_focused(window);
+                    if st.update(cx, |s, cx| s.key_down(&e.keystroke, e.is_held, typing, cx)) {
+                        cx.stop_propagation();
+                    }
+                }
+            })
+            .capture_key_up({
+                let st = state.clone();
+                move |e: &KeyUpEvent, _, cx| {
+                    if st.update(cx, |s, cx| s.key_up(&e.keystroke, cx)) {
+                        cx.stop_propagation();
+                    }
+                }
+            })
             .child(app_bar::render(s, &state))
             .child(body)
             .child(status_bar::render(s, &state))

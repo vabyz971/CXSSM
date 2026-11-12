@@ -28,34 +28,34 @@ fn row(label: &'static str, value: impl Into<SharedString>, color: Rgba) -> impl
     div()
         .flex()
         .gap(theme::GAP_MD)
-        .child(div().flex_none().w(px(150.)).text_color(theme::TEXT_DIM).child(label))
+        .child(div().flex_none().w(px(150.)).text_color(theme::text_dim()).child(label))
         .child(div().flex_1().min_w(px(0.)).truncate().text_color(color).child(value.into()))
 }
 
 /// Description de l'état du fichier du jeu : (texte, couleur, explication).
 fn game_text(s: &AppState) -> (&'static str, Rgba, Option<&'static str>) {
     match s.game_state {
-        None => (s.t("Vérification…", "Checking…"), theme::TEXT_DIM, None),
+        None => (s.t("Vérification…", "Checking…"), theme::text_dim(), None),
         Some(GameState::Unknown) => (
             s.t("Aucun fichier du jeu associé", "No game file set"),
-            theme::TEXT_DIM,
+            theme::text_dim(),
             Some(s.t("Choisissez fmod_assets_all.bundle dans le dossier du jeu.", "Choose fmod_assets_all.bundle in the game folder.")),
         ),
         Some(GameState::Missing) => (
             s.t("Fichier du jeu introuvable", "Game file not found"),
-            theme::DANGER,
+            theme::danger(),
             Some(s.t("Le jeu a été déplacé ou désinstallé : choisissez à nouveau son fichier.", "The game was moved or uninstalled: choose its file again.")),
         ),
-        Some(GameState::Original) => (s.t("Fichier d'origine — mod non installé", "Original file — mod not installed"), theme::TEXT_SOFT, None),
+        Some(GameState::Original) => (s.t("Fichier d'origine — mod non installé", "Original file — mod not installed"), theme::text_soft(), None),
         Some(GameState::Installed) if s.mod_stale() => (
             s.t("Mod installé, mais des changements ne le sont pas encore", "Mod installed, but some changes are not yet"),
-            theme::ACCENT,
+            theme::accent(),
             Some(s.t("Cliquez sur « Installer dans le jeu » pour les appliquer.", "Click “Install in the game” to apply them.")),
         ),
-        Some(GameState::Installed) => (s.t("Mod installé", "Mod installed"), theme::ACCENT, None),
+        Some(GameState::Installed) => (s.t("Mod installé", "Mod installed"), theme::accent(), None),
         Some(GameState::Updated) => (
             s.t("Le jeu a été mis à jour", "The game was updated"),
-            theme::DANGER,
+            theme::danger(),
             Some(s.t(
                 "Son fichier d'origine a changé : mettez à jour l'original du projet, puis réinstallez le mod (vos sons sont conservés).",
                 "Its original file changed: update the project's original, then reinstall the mod (your sounds are kept).",
@@ -63,7 +63,7 @@ fn game_text(s: &AppState) -> (&'static str, Rgba, Option<&'static str>) {
         ),
         Some(GameState::Modified) => (
             s.t("Fichier modifié (ancienne version du mod ou autre outil)", "Modified file (older mod build or another tool)"),
-            theme::DANGER,
+            theme::danger(),
             Some(s.t(
                 "Installez le mod pour le remplacer, ou restaurez le fichier d'origine.",
                 "Install the mod to replace it, or restore the original file.",
@@ -83,11 +83,11 @@ impl Render for ProjectDialog {
         let imported = w.manifest.sounds.iter().filter(|e| e.file.starts_with(Folder::Imported.rel())).count();
         let edited = w.manifest.sounds.iter().filter(|e| e.file.starts_with(Folder::Edited.rel())).count();
         let mod_text = if !w.mod_bundle().is_file() {
-            (s.t("pas encore construit", "not built yet"), theme::TEXT_DIM)
+            (s.t("pas encore construit", "not built yet"), theme::text_dim())
         } else if s.mod_stale() {
-            (s.t("à reconstruire (sons modifiés depuis)", "needs rebuilding (sounds changed since)"), theme::ACCENT)
+            (s.t("à reconstruire (sons modifiés depuis)", "needs rebuilding (sounds changed since)"), theme::accent())
         } else {
-            (s.t("à jour", "up to date"), theme::TEXT_SOFT)
+            (s.t("à jour", "up to date"), theme::text_soft())
         };
         let recordings = [&w.manifest.recordings.acc, &w.manifest.recordings.dec]
             .iter()
@@ -104,7 +104,7 @@ impl Render for ProjectDialog {
                     .child(
                         button("project-reveal")
                             .h(px(38.))
-                            .child(icon_sm(Icon::Folder, theme::TEXT))
+                            .child(icon_sm(Icon::Folder, theme::text()))
                             .child(s.t("Ouvrir", "Open"))
                             .on_click(on(state, |s, cx| s.reveal_project(cx))),
                     ),
@@ -116,10 +116,10 @@ impl Render for ProjectDialog {
                     .gap(px(8.))
                     .p(theme::GAP_MD)
                     .rounded(theme::RADIUS)
-                    .bg(theme::INSET)
+                    .bg(theme::inset())
                     .border_1()
-                    .border_color(theme::BORDER)
-                    .child(row(s.t("Original", "Original"), "original/fmod_assets_all.bundle", theme::TEXT_SOFT))
+                    .border_color(theme::border())
+                    .child(row(s.t("Original", "Original"), "original/fmod_assets_all.bundle", theme::text_soft()))
                     .child(row(s.t("Mod (mod/)", "Mod (mod/)"), mod_text.0, mod_text.1))
                     .child(row(
                         s.t("Sons remplacés", "Replaced sounds"),
@@ -127,12 +127,12 @@ impl Render for ProjectDialog {
                             format!("{} · {imported} importé(s), {edited} édité(s)", w.manifest.sounds.len()),
                             format!("{} · {imported} imported, {edited} edited", w.manifest.sounds.len()),
                         ),
-                        theme::TEXT_SOFT,
+                        theme::text_soft(),
                     ))
                     .child(row(
                         s.t("Enregistrements", "Recordings"),
                         if recordings.is_empty() { s.t("aucun", "none").to_string() } else { recordings },
-                        theme::TEXT_SOFT,
+                        theme::text_soft(),
                     )),
             );
 
@@ -170,7 +170,7 @@ impl Render for ProjectDialog {
                             .child(div().size(px(8.)).rounded(px(4.)).bg(super::app_bar::game_dot(s)))
                             .child(div().font_weight(FontWeight::MEDIUM).text_color(color).child(text)),
                     )
-                    .when_some(hint, |d, h| d.child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_DIM).child(h))),
+                    .when_some(hint, |d, h| d.child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(h))),
             )
             .child(
                 div()
@@ -188,7 +188,7 @@ impl Render for ProjectDialog {
                         d.child(
                             disabled(primary("project-install"), !can_install)
                                 .h(theme::BUTTON_H)
-                                .child(icon_sm(Icon::Download, theme::ON_ACCENT))
+                                .child(icon_sm(Icon::Download, theme::on_accent()))
                                 .child(s.t("Installer dans le jeu", "Install in the game"))
                                 .when(can_install, |b| b.on_click(on(state, |s, cx| s.install_into_game(cx)))),
                         )
@@ -224,9 +224,9 @@ impl Render for ProjectDialog {
         let note = div()
             .p(theme::GAP_MD)
             .rounded(theme::RADIUS)
-            .bg(theme::ACCENT_TINT)
+            .bg(theme::accent_tint())
             .border_1()
-            .border_color(theme::ACCENT_EDGE)
+            .border_color(theme::accent_edge())
             .text_size(theme::TEXT_SM)
             .child(s.t(
                 "Le Steam Workshop ne peut pas remplacer les sons : le jeu charge fmod_assets_all.bundle sans passer par \
@@ -243,9 +243,9 @@ impl Render for ProjectDialog {
             .flex_col()
             .w(px(680.))
             .rounded(theme::RADIUS_XL)
-            .bg(theme::PANEL)
+            .bg(theme::panel())
             .border_1()
-            .border_color(theme::BORDER)
+            .border_color(theme::border())
             .overflow_hidden()
             .on_click(|_, _, cx| cx.stop_propagation())
             .child(
@@ -258,7 +258,7 @@ impl Render for ProjectDialog {
                     .px(px(20.))
                     .py(theme::GAP_LG)
                     .border_b_1()
-                    .border_color(theme::DIVIDER)
+                    .border_color(theme::divider())
                     .child(
                         div()
                             .flex()
@@ -272,7 +272,7 @@ impl Render for ProjectDialog {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child(s.tf(format!("Projet · {}", w.manifest.name), format!("Project · {}", w.manifest.name))),
                             )
-                            .child(div().text_size(theme::TEXT_SM).text_color(theme::TEXT_FAINT).child(s.t(
+                            .child(div().text_size(theme::TEXT_SM).text_color(theme::text_faint()).child(s.t(
                                 "Enregistré automatiquement à chaque changement",
                                 "Saved automatically on every change",
                             ))),
@@ -281,7 +281,7 @@ impl Render for ProjectDialog {
                         button("project-close")
                             .px(px(16.))
                             .font_weight(FontWeight::MEDIUM)
-                            .child(icon_sm(Icon::Close, theme::TEXT))
+                            .child(icon_sm(Icon::Close, theme::text()))
                             .child(s.t("Fermer", "Close"))
                             .on_click(on(state, |s, cx| s.set_project_dialog(false, cx))),
                     ),
@@ -302,7 +302,7 @@ impl Render for ProjectDialog {
             .items_center()
             .justify_center()
             .p(px(32.))
-            .bg(theme::BACKDROP)
+            .bg(theme::backdrop())
             .occlude()
             .on_click(on(state, |s, cx| s.set_project_dialog(false, cx)))
             .child(dialog)
