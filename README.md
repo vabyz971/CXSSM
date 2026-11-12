@@ -11,6 +11,10 @@ the mod into the game with one click — and puts the original file back just as
 > Replaced sounds have been validated in game. Research notes (in French):
 > [docs/RECHERCHE_FMOD.md](docs/RECHERCHE_FMOD.md).
 
+![CXSSM main window (dark theme): engine simulator and the V10 "LFA_new" sound map](docs/screenshots/main-dark.png)
+
+![Preferences, Appearance section (light theme): theme and accent colour](docs/screenshots/preferences-light.png)
+
 ---
 
 ## How it works
