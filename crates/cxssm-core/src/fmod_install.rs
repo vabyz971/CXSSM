@@ -3,7 +3,9 @@
 //! Dispositions connues :
 //! - Linux  : `fmodstudioapi20400linux/{api/{core,studio}/lib/x86_64/*.so, bin/fsbank}`
 //! - Windows: `C:\Program Files (x86)\FMOD SoundSystem\FMOD Studio API Windows\{api\…\x64\*.dll, bin\fsbankcl.exe}`
-//! - macOS  : `FMOD Programmers API/{api/{core,studio}/lib/*.dylib, bin/fsbankcl}`
+//! - macOS  : `FMOD Programmers API/{api/{core,studio}/lib/*.dylib, tools/FSBank.app}` : pas de
+//!   dossier `bin/`, l'encodeur est l'exécutable de `FSBank.app`, qui accepte les mêmes options
+//!   en ligne de commande que `fsbank` sous Linux.
 //!
 //! Ordre de résolution : variables `CXSSM_FMOD_API` / `CXSSM_FSBANKCL`, puis dossier choisi
 //! dans les préférences, puis détection automatique.
@@ -13,7 +15,7 @@ use std::path::{Path, PathBuf};
 /// Une installation du FMOD Engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FmodInstall {
-    /// Dossier racine (contient `api/` et `bin/`).
+    /// Dossier racine (contient `api/`, et `bin/` ou `tools/` selon le système).
     pub root: PathBuf,
     /// Dossier `api/` (bibliothèques FMOD Core / Studio / FSBank).
     pub api: PathBuf,
@@ -32,18 +34,28 @@ fn studio_lib(api: &Path) -> PathBuf {
     }
 }
 
+/// Encodeur en ligne de commande, relatif à la racine, selon le système.
+fn fsbank_candidates() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &["bin/fsbankcl.exe"]
+    } else {
+        // macOS : `tools/FSBank.app` (l'archive Linux a `bin/fsbank` et `bin/fsbank_gui`).
+        &["bin/fsbank", "bin/fsbankcl", "tools/FSBank.app/Contents/MacOS/FSBank"]
+    }
+}
+
 fn fsbank_exe(root: &Path) -> Option<PathBuf> {
-    let names: &[&str] = if cfg!(windows) { &["fsbankcl.exe"] } else { &["fsbank", "fsbankcl"] };
-    names.iter().map(|n| root.join("bin").join(n)).find(|p| p.is_file())
+    fsbank_candidates().iter().map(|n| root.join(n)).find(|p| p.is_file())
 }
 
 impl FmodInstall {
     /// Reconnaît une installation à partir de n'importe quel dossier de l'utilisateur :
-    /// la racine, son `api/`, son `bin/`, ou le chemin de l'exécutable `fsbank`.
+    /// la racine, son `api/`, son `bin/`, son `tools/`, ou le chemin de l'exécutable `fsbank`
+    /// (jusqu'à `tools/FSBank.app/Contents/MacOS/FSBank` sous macOS).
     pub fn from_path(path: &Path) -> Option<Self> {
         let mut candidates = vec![path.to_path_buf()];
         let mut p = path;
-        for _ in 0..3 {
+        for _ in 0..5 {
             if let Some(parent) = p.parent() {
                 candidates.push(parent.to_path_buf());
                 p = parent;
@@ -136,6 +148,28 @@ mod tests {
             assert_eq!(inst.root, root);
         }
         assert!(FmodInstall::from_path(&tmp).is_none());
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Paquet macOS (« FMOD Programmers API » du .dmg) : pas de `bin/`, l'encodeur est dans
+    /// `tools/FSBank.app`.
+    #[cfg(unix)]
+    #[test]
+    fn finds_the_macos_fsbank_app() {
+        let tmp = std::env::temp_dir().join(format!("cxssm-fmod-mac-{}", std::process::id()));
+        let root = tmp.join("FMOD Programmers API");
+        let lib = studio_lib(&root.join("api"));
+        std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
+        std::fs::write(&lib, b"").unwrap();
+        let exe = root.join("tools/FSBank.app/Contents/MacOS/FSBank");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, b"").unwrap();
+
+        for p in [root.clone(), root.join("tools"), exe.clone()] {
+            let inst = FmodInstall::from_path(&p).unwrap_or_else(|| panic!("{}", p.display()));
+            assert_eq!(inst.root, root);
+            assert_eq!(inst.fsbank.as_deref(), Some(exe.as_path()));
+        }
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

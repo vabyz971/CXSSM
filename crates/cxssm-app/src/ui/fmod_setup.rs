@@ -141,12 +141,21 @@ pub fn guide(s: &AppState, state: &Entity<AppState>) -> gpui::Div {
                 .flex()
                 .flex_col()
                 .gap(theme::GAP_SM)
-                .child(text(s.t(
-                    "Choisissez le dossier qui contient « api » et « bin ». S'il se trouve dans Téléchargements, \
-                     Applications, /opt ou Program Files, « Rechercher à nouveau » le trouve tout seul.",
-                    "Choose the folder that contains “api” and “bin”. If it is in Downloads, Applications, \
-                     /opt or Program Files, “Search again” finds it on its own.",
-                )))
+                .child(text(if cfg!(target_os = "macos") {
+                    s.t(
+                        "Choisissez le dossier « FMOD Programmers API » (il contient « api » et « tools »). S'il se \
+                         trouve dans Applications ou Téléchargements, « Rechercher à nouveau » le trouve tout seul.",
+                        "Choose the “FMOD Programmers API” folder (it contains “api” and “tools”). If it is in \
+                         Applications or Downloads, “Search again” finds it on its own.",
+                    )
+                } else {
+                    s.t(
+                        "Choisissez le dossier qui contient « api » et « bin ». S'il se trouve dans Téléchargements, \
+                         /opt ou Program Files, « Rechercher à nouveau » le trouve tout seul.",
+                        "Choose the folder that contains “api” and “bin”. If it is in Downloads, /opt or \
+                         Program Files, “Search again” finds it on its own.",
+                    )
+                }))
                 .child(
                     div()
                         .flex()

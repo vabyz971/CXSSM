@@ -137,7 +137,7 @@ The **⚙ PREFERENCES** button (top bar) opens the settings panel:
 - **Game**: open the game bundle automatically on startup, pick one of the detected
   installations, or choose a file manually.
 - **FMOD Engine**: detected automatically (Downloads, `/opt`, `C:\Program Files (x86)\FMOD SoundSystem`,
-  `/Applications`), or choose its folder manually (root, `api/` or `bin/` all work).
+  `/Applications`), or choose its folder manually (root, `api/`, `bin/` or, on macOS, `tools/` all work).
 - **Updates**: check GitHub Releases on startup, then install the new version and restart
   from the panel (Nix installs are updated with Nix).
 
@@ -222,7 +222,8 @@ the archives to a GitHub Release.
 ## Requirements
 
 - **FMOD Engine** (free download, account required: <https://www.fmod.com/download>). It provides:
-  - the official encoder (`fsbank` / `fsbankcl`), required because **every CarX Street sound
+  - the official encoder (`bin/fsbank` on Linux, `bin\fsbankcl.exe` on Windows,
+    `tools/FSBank.app` on macOS — the macOS package has no `bin/` folder), required because **every CarX Street sound
     is FMOD Vorbis** (not standard Ogg);
   - `libfmodstudio`, used by the engine simulator.
 
@@ -236,6 +237,8 @@ the archives to a GitHub Release.
   export CXSSM_FSBANKCL=~/Downloads/fmodstudioapi20400linux/bin/fsbank
   # Windows
   setx CXSSM_FSBANKCL "C:\Program Files (x86)\FMOD SoundSystem\FMOD Studio API Windows\bin\fsbankcl.exe"
+  # macOS: the FSBank app's executable also works from the command line
+  export CXSSM_FSBANKCL="/Applications/FMOD Programmers API/tools/FSBank.app/Contents/MacOS/FSBank"
   ```
 - To build from source: **Rust** 1.85+ (`rustup`). On Linux, GPUI needs the Vulkan,
   Wayland/X11, xkbcommon and fontconfig development packages.
