@@ -146,6 +146,9 @@ pub struct AppState {
     pub open: HashSet<TreeKey>,
     pub query: String,
     pub search_focus: FocusHandle,
+    /// Valeur de curseur saisie au clavier (volume, hauteur), et son champ.
+    pub value_edit: Option<editor::ValueEdit>,
+    pub value_focus: FocusHandle,
     pub tree_scroll: ScrollHandle,
     pub list_scroll: UniformListScrollHandle,
     pub side_open: bool,
@@ -204,6 +207,8 @@ impl AppState {
             open: HashSet::from([TreeKey::Category(SoundCategory::Engine)]),
             query: String::new(),
             search_focus: cx.focus_handle(),
+            value_edit: None,
+            value_focus: cx.focus_handle(),
             tree_scroll: ScrollHandle::new(),
             list_scroll: UniformListScrollHandle::new(),
             side_open: true,

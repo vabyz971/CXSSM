@@ -19,9 +19,18 @@ use gpui::{AppContext as _, Bounds, Context, Pixels};
 
 use super::{AppState, Leaf};
 
-/// Plages des curseurs.
-pub const GAIN_RANGE: (f32, f32) = (-12., 12.);
-pub const PITCH_RANGE: (f32, f32) = (-6., 6.);
+/// Plages des curseurs (et des valeurs saisies au clavier).
+pub const GAIN_RANGE: (f32, f32) = (-100., 100.);
+pub const PITCH_RANGE: (f32, f32) = (-100., 100.);
+
+/// Saisie au clavier de la valeur d'un curseur.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValueEdit {
+    pub slider: Slider,
+    pub text: String,
+    /// Texte de départ encore sélectionné : la première touche le remplace.
+    pub fresh: bool,
+}
 
 /// Phase moteur d'un enregistrement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -598,6 +607,76 @@ impl AppState {
         } else {
             sel
         }
+    }
+
+    /// Clic sur la valeur d'un curseur : ouvre sa saisie au clavier.
+    pub fn begin_value_edit(&mut self, r: SoundRef, slider: Slider, cx: &mut Context<Self>) {
+        let v = self.editor.edits.get(&r).map_or(0., |e| match slider {
+            Slider::Gain => e.gain_db,
+            Slider::Pitch => e.semitones,
+            Slider::Passage => 0.,
+        });
+        let text = format!("{v:.2}").trim_end_matches('0').trim_end_matches('.').to_string();
+        let text = if text == "-0" { "0".into() } else { text };
+        self.value_edit = Some(ValueEdit { slider, text, fresh: true });
+        cx.notify();
+    }
+
+    /// Touche dans le champ de saisie d'une valeur. Renvoie `false` si elle ne le concerne pas.
+    pub fn value_key(&mut self, k: &gpui::Keystroke, cx: &mut Context<Self>) -> bool {
+        let Some(edit) = self.value_edit.as_mut() else { return false };
+        let m = &k.modifiers;
+        match k.key.as_str() {
+            "enter" => {
+                self.commit_value_edit(cx);
+                return true;
+            }
+            "escape" => self.value_edit = None,
+            "backspace" if edit.fresh => edit.text.clear(),
+            "backspace" => {
+                edit.text.pop();
+            }
+            _ if m.control || m.platform || m.alt => return false,
+            _ => match k.key_char.as_deref() {
+                Some(c) if c.len() == 1 && "0123456789.,-+".contains(c) => {
+                    if edit.fresh {
+                        edit.text.clear();
+                    }
+                    if edit.text.len() < 8 {
+                        edit.text.push_str(c);
+                    }
+                }
+                _ => return false,
+            },
+        }
+        if let Some(e) = self.value_edit.as_mut() {
+            e.fresh = false;
+        }
+        cx.notify();
+        true
+    }
+
+    /// Fin de la saisie (Entrée ou clic ailleurs) : la valeur, bornée à la plage du curseur,
+    /// est appliquée au son affiché et à la sélection, comme au relâchement d'un curseur.
+    pub fn commit_value_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(ValueEdit { slider, text, .. }) = self.value_edit.take() else { return };
+        cx.notify();
+        let Some(r) = self.sound else { return };
+        let Ok(v) = text.trim().replace(',', ".").parse::<f32>() else { return };
+        let (range, step) = match slider {
+            Slider::Gain => (GAIN_RANGE, 10.),
+            Slider::Pitch => (PITCH_RANGE, 100.),
+            Slider::Passage => return,
+        };
+        let v = (v.clamp(range.0, range.1) * step).round() / step;
+        self.begin_slide(r, slider);
+        let Some(edit) = self.editor.edits.get_mut(&r) else { return };
+        match slider {
+            Slider::Gain => edit.gain_db = v,
+            Slider::Pitch => edit.semitones = v,
+            Slider::Passage => {}
+        }
+        self.finish_slide(slider, cx);
     }
 
     /// Début du glisser d'un curseur.
