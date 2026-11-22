@@ -185,7 +185,7 @@ impl AppState {
         let mut s = Self {
             status: tr(settings.language, "Ouvrez fmod_assets_all.bundle pour commencer", "Open fmod_assets_all.bundle to get started")
                 .into(),
-            encoder: EncoderConfig { fsbankcl: fmod.as_ref().and_then(|f| f.fsbank.clone()), quality: 80 },
+            encoder: EncoderConfig::from_install(fmod.as_ref(), 80),
             settings,
             project: None,
             workspace: None,
@@ -741,7 +741,7 @@ impl AppState {
         self.settings.fmod_dir = Some(inst.root.clone());
         self.save_settings();
         self.fmod = self.settings.fmod();
-        self.encoder.fsbankcl = self.fmod.as_ref().and_then(|f| f.fsbank.clone());
+        self.encoder = EncoderConfig::from_install(self.fmod.as_ref(), self.encoder.quality);
         if self.engine.has_library() {
             // La bibliothèque déjà chargée reste utilisée jusqu'au prochain lancement.
             self.set_status(

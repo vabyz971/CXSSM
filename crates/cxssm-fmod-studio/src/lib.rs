@@ -10,6 +10,7 @@
 //! Tout le code `unsafe` du projet est confiné dans [`ffi`] ; l'API publique est sûre.
 
 mod ffi;
+mod fsbank;
 
 use std::ffi::{c_void, CStr, CString};
 use std::path::Path;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 pub use ffi::FmodLib;
+pub use fsbank::{build_fsb, fsbank_lib_path, FsbankFormat};
 
 #[derive(Debug, Error)]
 pub enum Error {
