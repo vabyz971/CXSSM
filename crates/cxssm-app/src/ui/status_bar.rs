@@ -14,7 +14,7 @@ pub fn render(s: &AppState, state: &Entity<AppState>) -> impl IntoElement {
         _ => s.t("Aucun bundle chargé", "No bundle loaded").into(),
     };
     let replaced = s.replaced_count();
-    let encoder = if s.encoder.fsbankcl.is_some() {
+    let encoder = if s.encoder.available() {
         s.t("Encodeur FMOD : OK", "FMOD encoder: OK")
     } else {
         s.t("Encodeur FMOD : introuvable (cliquez pour l'installer)", "FMOD encoder: not found (click to install it)")

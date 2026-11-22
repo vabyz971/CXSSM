@@ -222,8 +222,9 @@ the archives to a GitHub Release.
 ## Requirements
 
 - **FMOD Engine** (free download, account required: <https://www.fmod.com/download>). It provides:
-  - the official encoder (`bin/fsbank` on Linux, `bin\fsbankcl.exe` on Windows,
-    `tools/FSBank.app` on macOS — the macOS package has no `bin/` folder), required because **every CarX Street sound
+  - the official encoder (`bin/fsbank` on Linux, `bin\fsbankcl.exe` on Windows; on macOS,
+    whose package has no `bin/` folder, CXSSM calls the FSBank library `api/fsbank/lib/libfsbank.dylib`
+    directly, so the FSBank app never opens), required because **every CarX Street sound
     is FMOD Vorbis** (not standard Ogg);
   - `libfmodstudio`, used by the engine simulator.
 
@@ -237,8 +238,8 @@ the archives to a GitHub Release.
   export CXSSM_FSBANKCL=~/Downloads/fmodstudioapi20400linux/bin/fsbank
   # Windows
   setx CXSSM_FSBANKCL "C:\Program Files (x86)\FMOD SoundSystem\FMOD Studio API Windows\bin\fsbankcl.exe"
-  # macOS: the FSBank app's executable also works from the command line
-  export CXSSM_FSBANKCL="/Applications/FMOD Programmers API/tools/FSBank.app/Contents/MacOS/FSBank"
+  # macOS: nothing to set for the encoder, it is the library in api/fsbank/lib
+  export CXSSM_FMOD_API="/Applications/FMOD Programmers API/api"
   ```
 - To build from source: **Rust** 1.85+ (`rustup`). On Linux, GPUI needs the Vulkan,
   Wayland/X11, xkbcommon and fontconfig development packages.

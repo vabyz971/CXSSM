@@ -313,7 +313,7 @@ impl FmodLib {
 }
 
 /// Ouvre une bibliothèque en rendant ses symboles globaux (libfmodstudio dépend de libfmod).
-unsafe fn open_global(path: &Path) -> Result<Library> {
+pub(crate) unsafe fn open_global(path: &Path) -> Result<Library> {
     #[cfg(unix)]
     let lib = {
         use libloading::os::unix::{Library as UnixLib, RTLD_GLOBAL, RTLD_NOW};

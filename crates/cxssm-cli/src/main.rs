@@ -149,7 +149,11 @@ fn main() -> Result<()> {
                 println!("  aucune installation détectée (https://www.fmod.com/download)");
             }
             for f in installs {
-                let enc = f.fsbank.as_ref().map_or("encodeur absent".into(), |p| p.display().to_string());
+                let enc = match &f.fsbank {
+                    Some(p) if !(cfg!(target_os = "macos") && f.has_fsbank_lib()) => p.display().to_string(),
+                    _ if f.has_fsbank_lib() => format!("bibliothèque {}", f.fsbank_lib().display()),
+                    _ => "encodeur absent".into(),
+                };
                 println!("→ {}  ({enc})", f.root.display());
             }
         }
@@ -348,11 +352,11 @@ fn main() -> Result<()> {
                 }
             }
             if do_export {
-                let fsbankcl = fmod.fsbank.clone();
+                let enc = EncoderConfig::from_install(Some(&fmod), quality);
                 for (r, path) in generated {
                     p.set_replacement(r, path);
                 }
-                let path = export::export(&p, &EncoderConfig { fsbankcl, quality }, &out)?;
+                let path = export::export(&p, &enc, &out)?;
                 println!("bundle écrit : {}", path.display());
             }
         }
@@ -390,7 +394,10 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Replace { bundle, bank, sound, file, out, fsbankcl, quality } => {
-            let fsbankcl = fsbankcl.or_else(|| cxssm_core::FmodInstall::resolve(None).and_then(|f| f.fsbank));
+            let mut enc = EncoderConfig::from_install(cxssm_core::FmodInstall::resolve(None).as_ref(), quality);
+            if fsbankcl.is_some() {
+                enc.fsbankcl = fsbankcl;
+            }
             let mut p = ModProject::open(&bundle)?;
             let r: SoundRef = match p.sounds().find(|(_, b, s)| b.name == bank && s.name == sound) {
                 Some((r, _, _)) => r,
@@ -398,7 +405,7 @@ fn main() -> Result<()> {
             };
             p.set_replacement(r, file);
             println!("statut : {:?}", p.status(r));
-            let path = export::export(&p, &EncoderConfig { fsbankcl, quality }, &out)?;
+            let path = export::export(&p, &enc, &out)?;
             println!("bundle écrit : {}", path.display());
         }
     }

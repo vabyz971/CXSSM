@@ -451,13 +451,14 @@ impl Preferences {
                         .items_center()
                         .gap(theme::GAP_SM)
                         .text_color(theme::text_soft())
-                        .map(|d| match &f.fsbank {
-                            Some(_) => d
+                        .map(|d| if f.can_encode() {
+                            d
                                 .child(icon(Icon::Check, px(15.), theme::accent()))
-                                .child(s.t("Encodeur (fsbank) et simulateur disponibles", "Encoder (fsbank) and simulator available")),
-                            None => d
+                                .child(s.t("Encodeur (fsbank) et simulateur disponibles", "Encoder (fsbank) and simulator available"))
+                        } else {
+                            d
                                 .text_color(theme::danger())
-                                .child(s.t("Encodeur fsbank absent de ce dossier", "fsbank encoder missing from this folder")),
+                                .child(s.t("Encodeur fsbank absent de ce dossier", "fsbank encoder missing from this folder"))
                         }),
                 ),
             // Introuvable : le tutoriel d'installation complet.

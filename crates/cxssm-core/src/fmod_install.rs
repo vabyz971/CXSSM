@@ -3,9 +3,9 @@
 //! Dispositions connues :
 //! - Linux  : `fmodstudioapi20400linux/{api/{core,studio}/lib/x86_64/*.so, bin/fsbank}`
 //! - Windows: `C:\Program Files (x86)\FMOD SoundSystem\FMOD Studio API Windows\{api\…\x64\*.dll, bin\fsbankcl.exe}`
-//! - macOS  : `FMOD Programmers API/{api/{core,studio}/lib/*.dylib, tools/FSBank.app}` : pas de
-//!   dossier `bin/`, l'encodeur est l'exécutable de `FSBank.app`, qui accepte les mêmes options
-//!   en ligne de commande que `fsbank` sous Linux.
+//! - macOS  : `FMOD Programmers API/{api/{core,studio,fsbank}/lib/*.dylib, tools/FSBank.app}` :
+//!   pas de dossier `bin/`. `FSBank.app` est une application graphique : CXSSM encode avec la
+//!   bibliothèque `api/fsbank/lib/libfsbank.dylib` (voir [`crate::encoder`]).
 //!
 //! Ordre de résolution : variables `CXSSM_FMOD_API` / `CXSSM_FSBANKCL`, puis dossier choisi
 //! dans les préférences, puis détection automatique.
@@ -49,6 +49,21 @@ fn fsbank_exe(root: &Path) -> Option<PathBuf> {
 }
 
 impl FmodInstall {
+    /// Bibliothèque FSBank (`api/fsbank/lib/…`) attendue pour ce système.
+    pub fn fsbank_lib(&self) -> PathBuf {
+        cxssm_fmod_studio::fsbank_lib_path(&self.api)
+    }
+
+    /// La bibliothèque FSBank est présente.
+    pub fn has_fsbank_lib(&self) -> bool {
+        self.fsbank_lib().is_file()
+    }
+
+    /// Un encodeur est disponible (exécutable `fsbank` ou bibliothèque FSBank).
+    pub fn can_encode(&self) -> bool {
+        self.fsbank.is_some() || self.has_fsbank_lib()
+    }
+
     /// Reconnaît une installation à partir de n'importe quel dossier de l'utilisateur :
     /// la racine, son `api/`, son `bin/`, son `tools/`, ou le chemin de l'exécutable `fsbank`
     /// (jusqu'à `tools/FSBank.app/Contents/MacOS/FSBank` sous macOS).
