@@ -9,7 +9,7 @@ use crate::assets::{icon, Icon};
 use crate::state::editor::{GAIN_RANGE, PITCH_RANGE};
 use crate::state::{AppState, Drag, EditSource, Leaf, Phase, Playing, Slider, SourceKind};
 use crate::theme;
-use crate::widgets::{button, disabled, fmt_int, ghost, mono, on, primary, segment, segmented, slider};
+use crate::widgets::{button, disabled, fmt_int, ghost, mono, on, primary, segment, segmented, slider, tooltip};
 
 fn title(t: &'static str) -> gpui::Div {
     div().font_weight(FontWeight::SEMIBOLD).child(t)
@@ -59,7 +59,7 @@ fn slider_row(s: &AppState, state: &Entity<AppState>, r: SoundRef, which: Slider
                         .flex()
                         .items_center()
                         .gap(theme::GAP_XS)
-                        .child(mono(value_text))
+                        .child(value_field(s, state, r, which, value_text))
                         .child(
                             ghost(SharedString::from(format!("{id}-reset")))
                                 .size(px(22.))
@@ -70,6 +70,75 @@ fn slider_row(s: &AppState, state: &Entity<AppState>, r: SoundRef, which: Slider
                 ),
         )
         .child(slider(id, s.editor.track(which), value, centered, down))
+}
+
+/// Valeur d'un curseur. Volume et hauteur : un clic ouvre un champ pour la saisir au
+/// clavier (Entrée ou clic ailleurs pour valider, Échap pour annuler).
+fn value_field(s: &AppState, state: &Entity<AppState>, r: SoundRef, which: Slider, text: String) -> gpui::AnyElement {
+    let (id, unit) = match which {
+        Slider::Gain => ("val-gain", "dB"),
+        Slider::Pitch => ("val-pitch", s.t("demi-tons", "semitones")),
+        Slider::Passage => return mono(text).into_any_element(),
+    };
+    let focus = s.value_focus.clone();
+    match s.value_edit.as_ref().filter(|e| e.slider == which) {
+        Some(edit) => {
+            let st = state.clone();
+            let st_out = state.clone();
+            div()
+                .flex()
+                .items_center()
+                .gap(theme::GAP_XS)
+                .child(
+                    div()
+                        .id(SharedString::from(format!("{id}-input")))
+                        .track_focus(&focus)
+                        .flex()
+                        .items_center()
+                        .min_w(px(64.))
+                        .h(px(24.))
+                        .px(px(6.))
+                        .rounded(theme::RADIUS_SM)
+                        .bg(theme::field())
+                        .border_1()
+                        .border_color(theme::accent())
+                        .font_family(theme::FONT_MONO)
+                        .text_size(theme::TEXT_SM)
+                        .cursor_text()
+                        .child(
+                            div()
+                                .when(edit.fresh && !edit.text.is_empty(), |d| d.bg(theme::accent_tint()))
+                                .child(edit.text.clone()),
+                        )
+                        .child(div().w(px(1.5)).h(px(14.)).ml(px(1.)).bg(theme::accent()))
+                        .on_key_down(move |e: &gpui::KeyDownEvent, _, cx| {
+                            if st.update(cx, |s, cx| s.value_key(&e.keystroke, cx)) {
+                                cx.stop_propagation();
+                            }
+                        })
+                        .on_mouse_down_out(move |_, _, cx| st_out.update(cx, |s, cx| s.commit_value_edit(cx))),
+                )
+                .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(unit))
+                .into_any_element()
+        }
+        None => {
+            let st = state.clone();
+            div()
+                .id(id)
+                .px(px(4.))
+                .rounded(theme::RADIUS_SM)
+                .cursor_text()
+                .hover(|d| d.bg(theme::field()))
+                .tooltip(tooltip(s.t("Cliquez pour saisir une valeur précise", "Click to type an exact value")))
+                .child(mono(text))
+                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                    window.focus(&focus);
+                    st.update(cx, |s, cx| s.begin_value_edit(r, which, cx));
+                    cx.stop_propagation();
+                })
+                .into_any_element()
+        }
+    }
 }
 
 /// Enregistrements de la voiture et génération de toutes ses pistes.
@@ -162,7 +231,7 @@ fn adjustments(s: &AppState, state: &Entity<AppState>, r: SoundRef, all: bool) -
             r,
             Slider::Pitch,
             s.t("Hauteur", "Pitch"),
-            Value(format!("{semis:+.1} {} (×{:.2})", s.t("demi-ton", "semitone"), (semis / 12.).exp2()), norm(semis, PITCH_RANGE), true),
+            Value(format!("{semis:+.2} {} (×{:.3})", s.t("demi-ton", "semitone"), (semis / 12.).exp2()), norm(semis, PITCH_RANGE), true),
         ))
         .child(hint(if all {
             s.t(

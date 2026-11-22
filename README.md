@@ -64,7 +64,7 @@ My mod/
 
 ## Track editor
 
-The **Edit** tab of a sound adjusts its volume (±12 dB) and pitch (±6 semitones). The source
+The **Edit** tab of a sound adjusts its volume (±100 dB) and pitch (±100 semitones); click a value to type an exact one. The source
 can be the game's **original** sound (to make a sound quieter or deeper without any other
 file), an imported **file**, or — for engine sounds, experimental — a car **recording**. For engine
 sounds it can also rebuild the loops from two continuous recordings of the car (full

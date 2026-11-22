@@ -395,7 +395,7 @@ fn process_pcm(samples: &[f32], rate: u32, channels: u16, target: &Sample, gain_
                 .collect()
         })
         .collect();
-    let step = f64::from(rate) / f64::from(target.frequency) * f64::from(pitch.max(0.05));
+    let step = f64::from(rate) / f64::from(target.frequency) * f64::from(pitch.max(0.003));
     let frames = (planes[0].len() as f64 / step).floor() as usize;
     let gain = 10f32.powf(gain_db / 20.);
     let mut pcm = Vec::with_capacity(frames * ch_out);

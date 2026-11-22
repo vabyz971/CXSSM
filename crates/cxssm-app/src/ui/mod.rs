@@ -222,7 +222,10 @@ impl Render for Workspace {
             .capture_key_down({
                 let st = state.clone();
                 move |e: &KeyDownEvent, window, cx| {
-                    let typing = st.read(cx).search_focus.is_focused(window);
+                    let typing = {
+                        let s = st.read(cx);
+                        s.search_focus.is_focused(window) || s.value_focus.is_focused(window)
+                    };
                     if st.update(cx, |s, cx| s.key_down(&e.keystroke, e.is_held, typing, cx)) {
                         cx.stop_propagation();
                     }
