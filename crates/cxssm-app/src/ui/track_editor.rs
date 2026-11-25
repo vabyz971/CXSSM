@@ -473,10 +473,32 @@ pub fn render(s: &AppState, state: &Entity<AppState>, r: SoundRef) -> gpui::Div 
         .child(spec(s.t("Canaux", "Channels"), smp.channels.to_string()))
         .child(spec(s.t("Durée", "Length"), format!("{:.2} s", smp.duration_secs())));
 
+    // Son partagé : le modifier change aussi les autres voitures qui l'utilisent.
+    let shown_car = match s.leaf {
+        Some(Leaf::Car(i)) => Some(i),
+        _ => None,
+    };
+    let (sharing, _) = s.cars_sharing(r, shown_car);
+
     div()
         .flex()
         .flex_col()
         .gap(px(20.))
+        .when(!sharing.is_empty(), |d| {
+            d.child(
+                div()
+                    .p(theme::GAP_MD)
+                    .rounded(theme::RADIUS)
+                    .bg(theme::accent_tint())
+                    .border_1()
+                    .border_color(theme::accent_edge())
+                    .text_size(theme::TEXT_SM)
+                    .child(s.tf(
+                        format!("Son partagé : le modifier change aussi {}.", sharing.join(", ")),
+                        format!("Shared sound: changing it also changes {}.", sharing.join(", ")),
+                    )),
+            )
+        })
         .when(is_car, |d| d.child(recordings(s, state)))
         .child(source)
         .child(settings)

@@ -138,8 +138,11 @@ The **⚙ PREFERENCES** button (top bar) opens the settings panel:
   installations, or choose a file manually.
 - **FMOD Engine**: detected automatically (Downloads, `/opt`, `C:\Program Files (x86)\FMOD SoundSystem`,
   `/Applications`), or choose its folder manually (root, `api/`, `bin/` or, on macOS, `tools/` all work).
-- **Updates**: check GitHub Releases on startup, then install the new version and restart
-  from the panel (Nix installs are updated with Nix).
+- **Updates**: check GitHub Releases on startup, read the new version's release notes, then
+  install it and restart from the panel (Nix installs are updated with Nix). After an update,
+  CXSSM shows what's new in the version on its first launch.
+- **About**: links to the documentation (wiki) and the GitHub project, credits (creator,
+  contributors, FMOD) and the MIT license.
 
 CXSSM looks for `fmod_assets_all.bundle` in the default Steam folders and in every Steam library
 listed in `steamapps/libraryfolders.vdf` (games installed on other drives):
@@ -352,7 +355,7 @@ every text is written in both languages where it is used, e.g. `self.t("Ouvrir",
 - [ ] Encoding quality setting in the UI
 - [x] Save / reopen a mod project (`.cxssm`), install into / restore the game
 - [x] Track editor: volume, pitch, engine loops rebuilt from car recordings (experimental)
-- [ ] Credits / About screen (FMOD attribution)
+- [x] About screen: documentation, GitHub, credits, license; release notes after an update
 
 ## FMOD licensing
 

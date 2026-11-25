@@ -92,14 +92,17 @@ impl SoundList {
             .map(|m| {
                 let layer = live_layer(s, m);
                 let looping = p.sample(m.sound).is_some_and(|(_, smp)| smp.loop_range.is_some());
+                let mut role_text = role(s, m, max).to_string();
+                if looping {
+                    role_text = format!("{role_text} · {}", s.t("boucle", "loop"));
+                }
+                if let Some(c) = &m.condition {
+                    role_text = format!("{role_text} · {}", super::side_panel::condition_text(s, c));
+                }
                 Item {
                     r: m.sound,
                     name: s.sound_name(m.sound).into(),
-                    role: if looping {
-                        format!("{} · {}", role(s, m, max), s.t("boucle", "loop")).into()
-                    } else {
-                        role(s, m, max).into()
-                    },
+                    role: role_text.into(),
                     status: p.status(m.sound),
                     strip: rpm_strip(s, m, max),
                     values: Values::Live { volume: layer.map_or(0., |l| l.volume), pitch: layer.map(|l| l.pitch) },

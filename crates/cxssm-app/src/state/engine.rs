@@ -298,6 +298,24 @@ impl AppState {
         map.iter().any(|m| p.replacements.contains_key(&m.sound))
     }
 
+    /// Autres voitures qui utilisent ce son (d'après leurs cartes), et `true` si toutes les
+    /// voitures de sa banque sont déjà cartographiées (sinon la liste peut encore grandir).
+    pub fn cars_sharing(&self, r: SoundRef, except: Option<usize>) -> (Vec<String>, bool) {
+        let mut names = Vec::new();
+        let mut complete = true;
+        for (i, e) in self.engine.events.iter().enumerate() {
+            if e.bank != r.bank || Some(i) == except {
+                continue;
+            }
+            match self.engine.maps.get(&i) {
+                Some(Ok(m)) if m.iter().any(|x| x.sound == r) => names.push(e.name().to_string()),
+                Some(_) => {}
+                None => complete = false,
+            }
+        }
+        (names, complete)
+    }
+
     /// Banque dont un son est remplacé.
     pub fn bank_modified(&self, bank: usize) -> bool {
         self.project.as_ref().is_some_and(|p| p.replacements.keys().any(|r| r.bank == bank))
@@ -305,7 +323,8 @@ impl AppState {
 
     /// Cartographie une voiture à la fois : d'abord celle affichée, puis, en arrière-plan,
     /// celles des banques modifiées (pour savoir quelles voitures utilisent les sons
-    /// remplacés, même celles jamais ouvertes).
+    /// remplacés, même celles jamais ouvertes), puis les autres voitures de la banque
+    /// affichée (pour indiquer qui partage chaque son).
     pub(super) fn ensure_map(&mut self, cx: &mut Context<Self>) {
         let e = &self.engine;
         if e.mapping.is_some() {
@@ -315,7 +334,15 @@ impl AppState {
             Some(Leaf::Car(i)) if !e.maps.contains_key(&i) => Some(i),
             _ => None,
         };
-        let Some(i) = shown.or_else(|| (0..e.events.len()).find(|&i| !e.maps.contains_key(&i) && self.bank_modified(e.events[i].bank)))
+        let shown_bank = match self.leaf {
+            Some(Leaf::Car(i)) => e.events.get(i).map(|ev| ev.bank),
+            Some(Leaf::Bank(_, b)) => Some(b),
+            None => None,
+        };
+        let pending = |want: &dyn Fn(usize) -> bool| (0..e.events.len()).find(|&i| !e.maps.contains_key(&i) && want(e.events[i].bank));
+        let Some(i) = shown
+            .or_else(|| pending(&|b| self.bank_modified(b)))
+            .or_else(|| pending(&|b| Some(b) == shown_bank))
         else {
             return;
         };

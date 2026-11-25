@@ -39,6 +39,8 @@ pub struct Release {
     pub page: String,
     /// Archive correspondant à ce système, si elle a été publiée.
     pub asset: Option<Asset>,
+    /// Notes de version (texte de la release, sinon message du tag annoté).
+    pub notes: String,
 }
 
 /// Façon dont cet exécutable peut être mis à jour.
@@ -54,6 +56,8 @@ pub enum InstallMethod {
 struct GhRelease {
     tag_name: String,
     html_url: String,
+    #[serde(default)]
+    body: Option<String>,
     #[serde(default)]
     draft: bool,
     #[serde(default)]
@@ -132,7 +136,100 @@ pub fn check() -> Result<Option<Release>> {
             .find(|a| a.name.ends_with(suffix))
             .map(|a| Asset { name: a.name, url: a.browser_download_url, size: a.size })
     });
-    Ok(Some(Release { version, tag: rel.tag_name, page: rel.html_url, asset }))
+    let notes = notes_or_tag_message(rel.body.as_deref(), &rel.tag_name);
+    Ok(Some(Release { version, tag: rel.tag_name, page: rel.html_url, asset, notes }))
+}
+
+/// Dépôt GitHub du projet.
+pub fn repo_url() -> String {
+    format!("https://github.com/{REPO}")
+}
+
+fn get_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T> {
+    let mut resp = agent().get(url).header("Accept", "application/vnd.github+json").call().map_err(err)?;
+    serde_json::from_str(&resp.body_mut().read_to_string().map_err(err)?).map_err(err)
+}
+
+/// Texte de la release sans la ligne « Full Changelog » ajoutée par GitHub.
+fn clean_body(body: &str) -> String {
+    body.lines()
+        .filter(|l| !l.trim_start().starts_with("**Full Changelog**"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Notes de la release ; si GitHub n'y a mis que le lien « Full Changelog », le message
+/// du tag annoté (qui explique la raison de la version) les remplace.
+fn notes_or_tag_message(body: Option<&str>, tag: &str) -> String {
+    let notes = clean_body(body.unwrap_or_default());
+    if !notes.is_empty() {
+        return notes;
+    }
+    tag_message(tag).unwrap_or_else(|e| {
+        log::warn!("message du tag {tag} : {e}");
+        String::new()
+    })
+}
+
+/// Message d'un tag annoté du dépôt.
+fn tag_message(tag: &str) -> Result<String> {
+    #[derive(Deserialize)]
+    struct Obj {
+        sha: String,
+        #[serde(rename = "type")]
+        kind: String,
+    }
+    #[derive(Deserialize)]
+    struct Ref {
+        object: Obj,
+    }
+    #[derive(Deserialize)]
+    struct Tag {
+        message: String,
+    }
+    let r: Ref = get_json(&format!("https://api.github.com/repos/{REPO}/git/ref/tags/{tag}"))?;
+    if r.object.kind != "tag" {
+        return Ok(String::new()); // tag léger : pas de message
+    }
+    let t: Tag = get_json(&format!("https://api.github.com/repos/{REPO}/git/tags/{}", r.object.sha))?;
+    // Une éventuelle signature PGP suit le message.
+    let msg = t.message.split("-----BEGIN PGP SIGNATURE-----").next().unwrap_or_default();
+    Ok(msg.trim().to_string())
+}
+
+/// Notes de version publiées pour `tag` (ex. celles de la version en cours, après une mise à jour).
+pub fn release_notes(tag: &str) -> Result<String> {
+    #[derive(Deserialize)]
+    struct Body {
+        #[serde(default)]
+        body: Option<String>,
+    }
+    let body = match get_json::<Body>(&format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}")) {
+        Ok(b) => b.body,
+        Err(e) => {
+            log::warn!("release {tag} : {e}");
+            None
+        }
+    };
+    let notes = notes_or_tag_message(body.as_deref(), tag);
+    if notes.is_empty() {
+        return Err(err(format!("aucune note de version pour {tag}")));
+    }
+    Ok(notes)
+}
+
+/// Contributeurs du dépôt (identifiants GitHub, par nombre de contributions), sans les robots.
+pub fn contributors() -> Result<Vec<String>> {
+    #[derive(Deserialize)]
+    struct C {
+        login: String,
+        #[serde(rename = "type", default)]
+        kind: String,
+    }
+    let list: Vec<C> = get_json(&format!("https://api.github.com/repos/{REPO}/contributors?per_page=100"))?;
+    Ok(list.into_iter().filter(|c| c.kind != "Bot" && !c.login.ends_with("[bot]")).map(|c| c.login).collect())
 }
 
 /// Nom de l'exécutable graphique dans l'archive.
@@ -243,6 +340,23 @@ pub fn install(release: &Release) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Interroge GitHub : `cargo test -p cxssm-core -- --ignored github`.
+    #[test]
+    #[ignore = "accès réseau à GitHub"]
+    fn github_release_notes_and_contributors() {
+        let notes = release_notes("v0.4.3").unwrap();
+        assert!(notes.contains("Why this release"), "{notes}");
+        assert!(!notes.contains("Full Changelog"));
+        assert!(!contributors().unwrap().is_empty());
+    }
+
+    #[test]
+    fn release_body_without_full_changelog() {
+        let body = "## What's new\r\n- a\r\n\r\n**Full Changelog**: https://github.com/x/y/compare/v1...v2";
+        assert_eq!(clean_body(body), "## What's new\n- a");
+        assert_eq!(clean_body("**Full Changelog**: https://x"), "");
+    }
 
     #[test]
     fn versions_and_suffix() {

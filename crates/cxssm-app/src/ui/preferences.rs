@@ -1,15 +1,20 @@
 //! Préférences : fenêtre modale avec navigation par sections (Général, Apparence,
-//! Raccourcis clavier, Jeu, FMOD, Mises à jour).
+//! Raccourcis clavier, Jeu, FMOD, Mises à jour, À propos).
 
 use cxssm_core::update::{self, InstallMethod};
 use cxssm_core::{Language, ThemeMode};
-use gpui::{div, prelude::*, px, relative, BoxShadow, Context, ElementId, Entity, FontWeight, Window};
+use gpui::{div, prelude::*, px, relative, BoxShadow, Context, ElementId, Entity, FontWeight, SharedString, Window};
 
 use crate::assets::{icon, icon_sm, Icon};
 use crate::i18n;
 use crate::state::{AppState, PrefSection, Shortcut, CATEGORIES};
 use crate::theme;
-use crate::widgets::{button, label_block, on, path_field, primary, segment, segmented, switch};
+use crate::widgets::{button, label_block, on, path_field, primary, segment, segmented, switch, tooltip};
+
+/// Documentation du logiciel (wiki CarX Street).
+const WIKI_URL: &str = "https://carxstreet.wiki.gg/wiki/Community_project/CXSSM";
+/// Texte de la licence du projet.
+const LICENSE_TEXT: &str = include_str!("../../../../LICENSE");
 
 pub struct Preferences {
     state: Entity<AppState>,
@@ -562,6 +567,22 @@ impl Preferences {
                             "Nix install: update with `nix profile upgrade` or your flake.",
                         )))
                     })
+                    .when(!r.notes.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .id("update-notes")
+                                .max_h(px(260.))
+                                .overflow_y_scroll()
+                                .mt(px(4.))
+                                .p(theme::GAP_MD)
+                                .rounded(theme::RADIUS)
+                                .bg(theme::panel())
+                                .border_1()
+                                .border_color(theme::border())
+                                .text_size(theme::TEXT_SM)
+                                .child(super::release_notes::notes_view(&r.notes)),
+                        )
+                    })
                     .when(!nix && r.asset.is_none(), |d| {
                         d.child(div().text_size(theme::TEXT_SM).text_color(theme::danger()).child(s.t(
                             "Pas encore d'archive pour ce système dans cette release.",
@@ -636,6 +657,187 @@ impl Preferences {
             )
     }
 
+    fn about(&self, s: &AppState) -> gpui::Div {
+        let heading = |t: SharedString| div().font_weight(FontWeight::SEMIBOLD).child(t);
+        let link = |id: &'static str, title: &'static str, hint: &'static str, url: String| {
+            button(id)
+                .w_full()
+                .h_auto()
+                .py(px(10.))
+                .px(theme::GAP_MD)
+                .justify_between()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .min_w(px(0.))
+                        .child(div().font_weight(FontWeight::MEDIUM).child(title))
+                        .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).truncate().child(hint)),
+                )
+                .child(div().flex_none().text_color(theme::text_dim()).child("↗"))
+                .tooltip(tooltip(url.clone()))
+                .on_click(move |_, _, cx| cx.open_url(&url))
+        };
+        let creators = env!("CARGO_PKG_AUTHORS").replace(':', ", ");
+        let contributors: gpui::AnyElement = match &s.update.contributors {
+            Some(Ok(list)) if !list.is_empty() => div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .children(list.iter().enumerate().map(|(i, login)| {
+                    let url = format!("https://github.com/{login}");
+                    div()
+                        .id(ElementId::from(("contributor", i)))
+                        .px(px(9.))
+                        .py(px(3.))
+                        .rounded(theme::RADIUS_SM)
+                        .bg(theme::inset())
+                        .border_1()
+                        .border_color(theme::border())
+                        .font_family(theme::FONT_MONO)
+                        .text_size(theme::TEXT_SM)
+                        .cursor_pointer()
+                        .hover(|d| d.border_color(theme::accent()))
+                        .child(login.clone())
+                        .on_click(move |_, _, cx| cx.open_url(&url))
+                }))
+                .into_any_element(),
+            Some(Err(_)) => div()
+                .text_size(theme::TEXT_SM)
+                .text_color(theme::text_dim())
+                .child(s.t("Liste indisponible (hors ligne ?).", "List unavailable (offline?)."))
+                .into_any_element(),
+            _ => div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(s.t("Chargement…", "Loading…")).into_any_element(),
+        };
+        let repo = update::repo_url();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(theme::GAP_XL)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme::GAP_MD)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .size(px(44.))
+                            .rounded(px(10.))
+                            .bg(theme::accent())
+                            .child(icon(Icon::Logo, px(28.), theme::on_accent())),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .child(div().text_size(theme::TEXT_TITLE).font_weight(FontWeight::SEMIBOLD).child("CXSSM — CarX Street Sound Mod"))
+                            .child(div().text_color(theme::text_dim()).child(format!("Version {}", update::CURRENT_VERSION))),
+                    )
+                    .child(
+                        button("about-notes")
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(s.t("Notes de version", "Release notes"))
+                            .on_click(on(&self.state, |s, cx| s.show_release_notes(crate::state::current_tag(), cx))),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme::GAP_SM)
+                    .child(heading(s.t("Liens", "Links").into()))
+                    .child(link(
+                        "about-wiki",
+                        s.t("Documentation", "Documentation"),
+                        s.t("Guide d'utilisation et installation de FMOD, sur le wiki CarX Street", "User guide and FMOD setup, on the CarX Street wiki"),
+                        WIKI_URL.to_string(),
+                    ))
+                    .child(link(
+                        "about-github",
+                        s.t("Projet sur GitHub", "Project on GitHub"),
+                        s.t("Code source, versions publiées et signalement de problèmes", "Source code, releases and issue reports"),
+                        repo.clone(),
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme::GAP_SM)
+                    .child(heading(s.t("Crédits", "Credits").into()))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(theme::GAP_SM)
+                            .child(div().w(px(120.)).flex_none().text_color(theme::text_dim()).child(s.t("Créateur", "Creator")))
+                            .child(div().font_weight(FontWeight::MEDIUM).child(creators)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(theme::GAP_SM)
+                            .child(div().w(px(120.)).flex_none().text_color(theme::text_dim()).child(s.t("Contributeurs", "Contributors")))
+                            .child(div().flex_1().min_w(px(0.)).child(contributors)),
+                    )
+                    .child(div().text_size(theme::TEXT_SM).text_color(theme::text_dim()).child(s.t(
+                        "Moteur audio : FMOD Studio par Firelight Technologies Pty Ltd. (installé séparément). \
+                         Table d'en-têtes FMOD Vorbis issue de fsbex (MIT/Apache-2.0). Interface : GPUI (Zed Industries).",
+                        "Audio engine: FMOD Studio by Firelight Technologies Pty Ltd. (installed separately). \
+                         FMOD Vorbis setup-header table from fsbex (MIT/Apache-2.0). UI: GPUI (Zed Industries).",
+                    )))
+                    .child(div().text_size(theme::TEXT_SM).text_color(theme::text_faint()).child(s.t(
+                        "Projet de fans, sans lien avec CarX Technologies ni Firelight Technologies.",
+                        "Fan project, not affiliated with CarX Technologies or Firelight Technologies.",
+                    ))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme::GAP_SM)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(theme::GAP_MD)
+                            .child(heading(
+                                s.tf(format!("Licence {}", env!("CARGO_PKG_LICENSE")), format!("{} license", env!("CARGO_PKG_LICENSE"))).into(),
+                            ))
+                            .child(
+                                button("about-license")
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(if s.about_license_open { s.t("Masquer", "Hide") } else { s.t("Lire la licence", "Read the license") })
+                                    .on_click(on(&self.state, |s, cx| {
+                                        s.about_license_open = !s.about_license_open;
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+                    .when(s.about_license_open, |d| {
+                        d.child(
+                            div()
+                                .p(theme::GAP_MD)
+                                .rounded(theme::RADIUS)
+                                .bg(theme::inset())
+                                .border_1()
+                                .border_color(theme::border())
+                                .font_family(theme::FONT_MONO)
+                                .text_size(theme::TEXT_XS)
+                                .text_color(theme::text_soft())
+                                .child(LICENSE_TEXT),
+                        )
+                    }),
+            )
+    }
+
     fn nav(&self, s: &AppState) -> impl IntoElement {
         let has_update = s.update.latest.is_some();
         let items = [
@@ -645,6 +847,7 @@ impl Preferences {
             (PrefSection::Game, s.t("Jeu", "Game")),
             (PrefSection::Fmod, "FMOD"),
             (PrefSection::Updates, s.t("Mises à jour", "Updates")),
+            (PrefSection::About, s.t("À propos", "About")),
         ];
         div()
             .flex()
@@ -689,6 +892,7 @@ impl Render for Preferences {
             PrefSection::Game => self.game(s),
             PrefSection::Fmod => self.fmod(s),
             PrefSection::Updates => self.updates(s),
+            PrefSection::About => self.about(s),
         };
 
         let dialog = div()
