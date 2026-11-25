@@ -25,7 +25,7 @@ pub use engine::EngineState;
 pub use history::History;
 pub use shortcuts::Shortcut;
 pub use playback::{Playback, Playing};
-pub use updates::UpdateState;
+pub use updates::{current_tag, UpdateState};
 
 use crate::i18n::tr;
 
@@ -74,6 +74,7 @@ pub enum PrefSection {
     Game,
     Fmod,
     Updates,
+    About,
 }
 
 /// Glisser en cours. La vue racine reçoit tous les mouvements de la souris et
@@ -171,10 +172,13 @@ pub struct AppState {
     /// Dernier échec de la recherche ou du choix du dossier FMOD.
     pub fmod_error: Option<SharedString>,
     pub update: UpdateState,
+    /// Texte de la licence affiché dans Préférences › À propos.
+    pub about_license_open: bool,
 }
 
 impl AppState {
     pub fn new(cx: &mut Context<Self>, initial: Option<PathBuf>) -> Self {
+        let had_settings = Settings::path().is_some_and(|p| p.is_file());
         let settings = Settings::load();
         crate::theme::apply(settings.theme, settings.accent_rgb());
         let fmod = settings.fmod();
@@ -224,6 +228,7 @@ impl AppState {
             fmod_help_open: false,
             fmod_error: None,
             update: UpdateState::default(),
+            about_license_open: false,
         };
         s.fmod_help_open = s.fmod.is_none();
         if let Some(path) = initial {
@@ -232,6 +237,7 @@ impl AppState {
         if s.settings.check_updates {
             s.check_updates(true, cx);
         }
+        s.note_version_change(had_settings, cx);
         s
     }
 
@@ -642,6 +648,9 @@ impl AppState {
         if let Some(sec) = section {
             self.prefs_section = sec;
         }
+        if self.prefs_section == PrefSection::About {
+            self.load_contributors(cx);
+        }
         self.prefs_open = true;
         cx.notify();
     }
@@ -661,6 +670,9 @@ impl AppState {
 
     pub fn set_prefs_section(&mut self, sec: PrefSection, cx: &mut Context<Self>) {
         self.prefs_section = sec;
+        if sec == PrefSection::About {
+            self.load_contributors(cx);
+        }
         cx.notify();
     }
 

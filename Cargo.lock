@@ -1488,6 +1488,7 @@ dependencies = [
  "log",
  "rfd",
  "rodio",
+ "semver",
 ]
 
 [[package]]

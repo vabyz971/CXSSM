@@ -102,6 +102,9 @@ pub struct Settings {
     /// Couleur d'accentuation, `#RRGGBB`.
     pub accent: String,
     pub shortcuts: Shortcuts,
+    /// Version de CXSSM lors du dernier lancement : une version différente au démarrage
+    /// signifie une mise à jour, dont les notes sont alors affichées.
+    pub last_version: Option<String>,
 }
 
 impl Default for Settings {
@@ -118,6 +121,7 @@ impl Default for Settings {
             theme: ThemeMode::Dark,
             accent: format_hex(DEFAULT_ACCENT),
             shortcuts: Shortcuts::default(),
+            last_version: None,
         }
     }
 }

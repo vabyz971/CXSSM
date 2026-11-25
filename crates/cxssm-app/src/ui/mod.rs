@@ -14,6 +14,7 @@ mod app_bar;
 mod fmod_setup;
 mod preferences;
 mod project_dialog;
+mod release_notes;
 mod rpm_simulator;
 mod side_panel;
 mod sound_list;
@@ -37,6 +38,7 @@ pub struct Workspace {
     prefs: Entity<preferences::Preferences>,
     project: Entity<project_dialog::ProjectDialog>,
     fmod_setup: Entity<fmod_setup::FmodSetup>,
+    release_notes: Entity<release_notes::ReleaseNotes>,
     /// Focus de la fenêtre : reçoit les raccourcis clavier.
     focus: FocusHandle,
 }
@@ -56,6 +58,7 @@ impl Workspace {
             prefs: cx.new(|_| preferences::Preferences::new(state.clone())),
             project: cx.new(|_| project_dialog::ProjectDialog::new(state.clone())),
             fmod_setup: cx.new(|_| fmod_setup::FmodSetup::new(state.clone())),
+            release_notes: cx.new(|_| release_notes::ReleaseNotes::new(state.clone())),
             state,
         }
     }
@@ -245,5 +248,7 @@ impl Render for Workspace {
             .when(s.project_dialog && s.workspace.is_some() && !s.prefs_open, |d| d.child(self.project.clone()))
             .when(s.prefs_open, |d| d.child(self.prefs.clone()))
             .when(s.fmod_help_open && !s.prefs_open, |d| d.child(self.fmod_setup.clone()))
+            // Au-dessus de tout, y compris des préférences (ouverte depuis À propos).
+            .when(s.update.notes_open.is_some(), |d| d.child(self.release_notes.clone()))
     }
 }
