@@ -122,9 +122,31 @@ impl SidePanel {
             format!("{} · {} Hz · {channels} · {:.2} s", bank.fsb.codec, fmt_int(smp.frequency as f32, lang), smp.duration_secs()).into(),
             true,
         ));
-        match s.leaf {
-            Some(Leaf::Car(i)) => rows.push((s.t("Voiture", "Car"), format!("{} ({})", s.engine.events[i].name(), bank.name).into(), false)),
-            _ => rows.push((s.t("Banque", "Bank"), bank.name.clone().into(), false)),
+        if let Some(c) = entries.iter().find_map(|e| e.condition.as_ref()) {
+            rows.push((s.t("Seulement si", "Only when"), condition_text(s, c).into(), false));
+        }
+        let shown_car = match s.leaf {
+            Some(Leaf::Car(i)) => {
+                rows.push((s.t("Voiture", "Car"), format!("{} ({})", s.engine.events[i].name(), bank.name).into(), false));
+                Some(i)
+            }
+            _ => {
+                rows.push((s.t("Banque", "Bank"), bank.name.clone().into(), false));
+                None
+            }
+        };
+        if s.engine.events.iter().any(|e| e.bank == r.bank) {
+            let (cars, complete) = s.cars_sharing(r, shown_car);
+            let mut text = match (cars.is_empty(), shown_car.is_some()) {
+                (true, true) => s.t("aucune autre voiture", "no other car").to_string(),
+                (true, false) => s.t("aucune voiture", "no car").to_string(),
+                (false, _) => cars.join(", "),
+            };
+            if !complete {
+                text.push_str(s.t(" (analyse des autres voitures…)", " (analysing the other cars…)"));
+            }
+            let key = if shown_car.is_some() { s.t("Aussi utilisé par", "Also used by") } else { s.t("Utilisé par", "Used by") };
+            rows.push((key, text.into(), false));
         }
 
         div()
@@ -262,5 +284,13 @@ impl Render for SidePanel {
             .child(self.tabs(s))
             .child(div().id("side-body").flex_1().min_h(px(0.)).overflow_y_scroll().p(theme::GAP_LG).child(body))
             .into_any_element()
+    }
+}
+
+/// Situation dans laquelle un son est entendu (hors balayage de base).
+pub fn condition_text(s: &AppState, c: &cxssm_core::engine::Condition) -> String {
+    match c {
+        cxssm_core::engine::Condition::Param { name, value } => format!("{name} = {value}"),
+        cxssm_core::engine::Condition::LiftOff => s.t("au relâchement de l'accélérateur", "when the throttle is released").to_string(),
     }
 }

@@ -19,6 +19,7 @@ pub(crate) const STUDIO_INIT_SYNCHRONOUS_UPDATE: u32 = 0x2;
 const LOAD_MEMORY: i32 = 0; // FMOD_STUDIO_LOAD_MEMORY : FMOD copie les octets
 const STOP_IMMEDIATE: i32 = 1;
 const TIMEUNIT_PCM: u32 = 2;
+const TIMEUNIT_RAWBYTES: u32 = 8;
 const ERR_HEADER_MISMATCH: R = 20;
 
 #[repr(C)]
@@ -74,6 +75,7 @@ fmod_fns! {
     studio_get_event: "FMOD_Studio_System_GetEvent" => fn(Ptr, *const c_char, *mut Ptr),
     bank_unload: "FMOD_Studio_Bank_Unload" => fn(Ptr),
     bank_load_samples: "FMOD_Studio_Bank_LoadSampleData" => fn(Ptr),
+    bank_sample_state: "FMOD_Studio_Bank_GetSampleLoadingState" => fn(Ptr, *mut i32),
     bank_event_count: "FMOD_Studio_Bank_GetEventCount" => fn(Ptr, *mut i32),
     bank_event_list: "FMOD_Studio_Bank_GetEventList" => fn(Ptr, *mut Ptr, i32, *mut i32),
     ed_path: "FMOD_Studio_EventDescription_GetPath" => fn(Ptr, *mut c_char, i32, *mut i32),
@@ -190,6 +192,14 @@ impl FmodLib {
         unsafe { (self.bank_load_samples)(bank) };
     }
 
+    /// État de chargement des données audio (`FMOD_STUDIO_LOADING_STATE`, 3 = chargées, 4 = erreur).
+    pub(crate) fn bank_sample_state(&self, bank: Ptr) -> i32 {
+        let mut st = 0;
+        // SAFETY: banque valide, pointeur de sortie valide.
+        unsafe { (self.bank_sample_state)(bank, &mut st) };
+        st
+    }
+
     pub(crate) fn event_list(&self, bank: Ptr) -> Result<Vec<Ptr>> {
         let mut n = 0;
         // SAFETY: tampon dimensionné d'après GetEventCount.
@@ -293,12 +303,13 @@ impl FmodLib {
                 if (self.cg_channel)(group, i, &mut ch) != 0 || (self.ch_sound)(ch, &mut snd) != 0 || snd.is_null() {
                     continue;
                 }
-                let (mut len, mut vol, mut pitch, mut pos) = (0u32, 0f32, 1f32, 0u32);
+                let (mut len, mut raw, mut vol, mut pitch, mut pos) = (0u32, 0u32, 0f32, 1f32, 0u32);
                 (self.sound_length)(snd, &mut len, TIMEUNIT_PCM);
+                (self.sound_length)(snd, &mut raw, TIMEUNIT_RAWBYTES);
                 (self.ch_audibility)(ch, &mut vol);
                 (self.ch_pitch)(ch, &mut pitch);
                 (self.ch_position)(ch, &mut pos, TIMEUNIT_PCM);
-                out.push(Layer { length_pcm: len, volume: vol, pitch: pitch * group_pitch, position_pcm: pos });
+                out.push(Layer { length_pcm: len, length_raw: raw, volume: vol, pitch: pitch * group_pitch, position_pcm: pos });
             }
             let mut g = 0;
             (self.cg_num_groups)(group, &mut g);

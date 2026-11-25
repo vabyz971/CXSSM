@@ -204,10 +204,14 @@ fn main() -> Result<()> {
                     for m in engine::sweep(&lib, &data, e, step)? {
                         let s = &p.banks[m.sound.bank].fsb.samples[m.sound.sample];
                         println!(
-                            "  {:<12} {:<11} {:>5.0} → {:>5.0} tr/min   pic {:>5.0} (vol {:.2})",
+                            "  {:<12} {:<11} {:>5.0} → {:>5.0} tr/min   pic {:>5.0} (vol {:.2}){}",
                             s.name,
                             if m.on_load { "accélération" } else { "pied levé" },
-                            m.rpm_min, m.rpm_max, m.rpm_peak, m.peak_volume
+                            m.rpm_min,
+                            m.rpm_max,
+                            m.rpm_peak,
+                            m.peak_volume,
+                            m.condition.as_ref().map(|c| format!("   seulement si {c}")).unwrap_or_default()
                         );
                     }
                 }
@@ -227,8 +231,21 @@ fn main() -> Result<()> {
                 let cells: Vec<String> = layers
                     .iter()
                     .map(|l| {
-                        let name = l.sound.map_or("?".into(), |r| p.banks[r.bank].fsb.samples[r.sample].name.clone());
-                        format!("{name} v{:.2} p{:.3} @{}", l.volume, l.pitch, l.position_pcm)
+                        let name = l.sound.map_or_else(
+                            || {
+                                // Son non identifié dans la banque de l'évènement : où existe cette longueur ?
+                                let hits: Vec<String> = p
+                                    .banks
+                                    .iter()
+                                    .flat_map(|b| {
+                                        b.fsb.samples.iter().filter(|s| s.num_samples == u64::from(l.length_pcm)).map(move |s| format!("{}/{} raw{}", b.name, s.name, s.data.len()))
+                                    })
+                                    .collect();
+                                format!("?[{}]", if hits.is_empty() { "aucune banque".into() } else { hits.join(",") })
+                            },
+                            |r| p.banks[r.bank].fsb.samples[r.sample].name.clone(),
+                        );
+                        format!("{name} len{} raw{} v{:.2} p{:.3} @{}", l.length_pcm, l.length_raw, l.volume, l.pitch, l.position_pcm)
                     })
                     .collect();
                 println!("{rpm:>6.0}  {}", cells.join("  |  "));

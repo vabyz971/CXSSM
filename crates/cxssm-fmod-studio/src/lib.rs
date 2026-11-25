@@ -80,6 +80,8 @@ impl EventInfo {
 pub struct Layer {
     /// Longueur en échantillons PCM : sert à retrouver le son dans le FSB.
     pub length_pcm: u32,
+    /// Taille des données compressées (octets) : distingue deux sons de même durée.
+    pub length_raw: u32,
     /// Volume effectif (audibilité FMOD, toutes atténuations comprises).
     pub volume: f32,
     /// Hauteur relative (1.0 = vitesse d'origine), groupes parents compris.
@@ -134,6 +136,19 @@ impl System {
     /// Charge les données audio d'une banque (évite la latence au démarrage d'un évènement).
     pub fn load_sample_data(&self, bank: Bank) {
         self.lib.bank_load_sample_data(bank.0);
+    }
+
+    /// Attend (en mettant le système à jour) que les données audio de la banque soient
+    /// chargées : sinon les premiers instants d'un évènement sont muets. Au plus `max_updates`.
+    pub fn wait_sample_data(&self, bank: Bank, max_updates: u32) {
+        for _ in 0..max_updates {
+            if matches!(self.lib.bank_sample_state(bank.0), 3 | 4) {
+                return;
+            }
+            self.update();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        log::warn!("données audio de la banque toujours en chargement");
     }
 
     pub fn update(&self) {

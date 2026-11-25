@@ -485,6 +485,9 @@ impl AppState {
                 self.open.insert(TreeKey::Group(SoundCategory::Engine, bank));
             }
             self.select_car(i, cx);
+        } else {
+            // Banque moteur : cartographie ses voitures (qui utilise chaque son).
+            self.ensure_map(cx);
         }
         cx.notify();
     }
